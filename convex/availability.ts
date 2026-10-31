@@ -141,7 +141,11 @@ export const tapeForProperty = query({
         status: booking.status,
         confirmationCode: booking.confirmationCode,
         source: booking.source,
-        guestName: guest?.name ?? (booking.status === 'blocked' ? 'Inventory block' : 'External guest'),
+        guestName:
+          guest?.name ??
+          (booking.status === 'blocked'
+            ? 'Inventory block'
+            : booking.notes[0]?.text || 'External guest'),
         adults: booking.adults,
         children: booking.children,
         paymentStatus,

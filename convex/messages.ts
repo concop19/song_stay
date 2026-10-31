@@ -7,6 +7,15 @@ import { requireStaff } from './staff';
 
 const MAX_MESSAGE_LENGTH = 2_000;
 
+async function requireStaffName(ctx: QueryCtx | MutationCtx): Promise<string> {
+  if (process.env.DEMO_MODE === 'true') return 'Demo staff';
+  return (await requireStaff(ctx)).profile.name;
+}
+
+async function requireStaffRead(ctx: QueryCtx): Promise<void> {
+  if (process.env.DEMO_MODE !== 'true') await requireStaff(ctx);
+}
+
 function normalizeText(value: string): string {
   const text = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim();
   if (!text) throw new ConvexError({ code: 'EMPTY_MESSAGE', message: 'Enter a message.' });
@@ -66,7 +75,7 @@ export const postGuest = mutation({
 export const listStaff = query({
   args: { bookingId: v.id('bookings') },
   handler: async (ctx, args) => {
-    await requireStaff(ctx);
+    await requireStaffRead(ctx);
     if (!(await ctx.db.get(args.bookingId))) throw new ConvexError('BOOKING_NOT_FOUND');
     return thread(ctx, args.bookingId);
   },
@@ -75,14 +84,14 @@ export const listStaff = query({
 export const postStaff = mutation({
   args: { bookingId: v.id('bookings'), text: v.string() },
   handler: async (ctx, args) => {
-    const { profile } = await requireStaff(ctx);
+    const authorName = await requireStaffName(ctx);
     const booking = await ctx.db.get(args.bookingId);
     if (!booking) throw new ConvexError('BOOKING_NOT_FOUND');
     const messageId = await ctx.db.insert('bookingMessages', {
       propertyId: booking.propertyId,
       bookingId: booking._id,
       authorRole: 'staff',
-      authorName: profile.name,
+      authorName,
       text: normalizeText(args.text),
       createdAt: Date.now(),
     });
@@ -94,7 +103,7 @@ export const postStaff = mutation({
 export const staffThreads = query({
   args: {},
   handler: async (ctx) => {
-    await requireStaff(ctx);
+    await requireStaffRead(ctx);
     const messages = await ctx.db.query('bookingMessages').order('desc').take(200);
     const latest = new Map<string, Doc<'bookingMessages'>>();
     for (const message of messages) if (!latest.has(message.bookingId)) latest.set(message.bookingId, message);

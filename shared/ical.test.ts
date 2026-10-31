@@ -197,4 +197,22 @@ describe('parseIcs', () => {
 
     expect(parseIcs(ics)).toEqual(parseIcs(ics));
   });
+
+  it('rejects impossible calendar dates and non-positive event ranges', () => {
+    const impossible = parseIcs([
+      'BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:bad-date',
+      'DTSTART;VALUE=DATE:20260230', 'DTEND;VALUE=DATE:20260302',
+      'END:VEVENT', 'END:VCALENDAR',
+    ].join('\r\n'));
+    expect(impossible.events).toHaveLength(0);
+    expect(impossible.warnings[0]).toContain('unparseable DTSTART');
+
+    const backwards = parseIcs([
+      'BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:bad-range',
+      'DTSTART;VALUE=DATE:20260924', 'DTEND;VALUE=DATE:20260922',
+      'END:VEVENT', 'END:VCALENDAR',
+    ].join('\r\n'));
+    expect(backwards.events).toHaveLength(0);
+    expect(backwards.warnings[0]).toContain('DTEND must be after DTSTART');
+  });
 });

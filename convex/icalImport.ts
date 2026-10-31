@@ -1,10 +1,11 @@
-import { v } from 'convex/values';
-import { internalAction, internalMutation, internalQuery } from './_generated/server';
-import { internal } from './_generated/api';
+import { ConvexError, v } from 'convex/values';
+import { action, internalAction, internalMutation, internalQuery, mutation, query } from './_generated/server';
+import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
 import { parseIcs } from '../shared/ical';
 import { markPropertyDirtyInline } from './channel/ari';
+import { requireMutationPropertyCapability, requirePropertyCapability } from './staff';
 
 /**
  * iCal calendar IMPORT (M1, builder E) — pulls external calendars (a direct
@@ -37,29 +38,141 @@ import { markPropertyDirtyInline } from './channel/ari';
  */
 
 const FETCH_TIMEOUT_MS = 10_000;
+const MAX_ICS_BYTES = 1_000_000;
+
+function validateFeedUrl(rawUrl: string): string {
+  const value = rawUrl.trim();
+  if (value.startsWith('/mock-ical/') && value.endsWith('.ics')) return value;
+  if (value.length > 2_048) throw new ConvexError('ICAL_URL_TOO_LONG');
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new ConvexError('ICAL_URL_INVALID');
+  }
+  if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new ConvexError('ICAL_URL_INVALID');
+  }
+  return parsed.toString();
+}
+
+const BUILTIN_MOCK_ICS: Record<string, string> = {
+  '/mock-ical/airbnb-phong-a.ics': [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Airbnb Inc//Hosting Calendar 0.8.8//EN',
+    'BEGIN:VEVENT',
+    'DTSTART;VALUE=DATE:20260920',
+    'DTEND;VALUE=DATE:20260923',
+    'UID:airbnb-phong-a-20260920@airbnb.com',
+    'SUMMARY:Airbnb - Nguyen Minh Tuan (20-23/09)',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n'),
+  '/mock-ical/booking-phong-a.ics': [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Booking.com//iCal Export 1.0//EN',
+    'BEGIN:VEVENT',
+    'DTSTART;VALUE=DATE:20260922',
+    'DTEND;VALUE=DATE:20260924',
+    'UID:booking-phong-a-20260922@booking.com',
+    'SUMMARY:Booking.com - Tran Thu Ha (22-24/09)',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n'),
+  '/mock-ical/booking-boundary-phong-a.ics': [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Booking.com//iCal Export 1.0//EN',
+    'BEGIN:VEVENT',
+    'DTSTART;VALUE=DATE:20260923',
+    'DTEND;VALUE=DATE:20260925',
+    'UID:booking-phong-a-boundary-20260923@booking.com',
+    'SUMMARY:Booking.com - Le Hoang Nam (23-25/09 Check-in=Check-out)',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n'),
+  '/mock-ical/booking-exact-phong-a.ics': [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Booking.com//iCal Export 1.0//EN',
+    'BEGIN:VEVENT',
+    'DTSTART;VALUE=DATE:20260920',
+    'DTEND;VALUE=DATE:20260923',
+    'UID:booking-phong-a-exact-20260920@booking.com',
+    'SUMMARY:Booking.com - Pham Minh Duc (20-23/09 Exact Overlap)',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n'),
+  '/mock-ical/booking-safe-phong-a.ics': [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Booking.com//iCal Export 1.0//EN',
+    'BEGIN:VEVENT',
+    'DTSTART;VALUE=DATE:20260925',
+    'DTEND;VALUE=DATE:20260928',
+    'UID:booking-phong-a-safe-20260925@booking.com',
+    'SUMMARY:Booking.com - Vo Thi Mai (25-28/09 No Overlap)',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n'),
+};
+
+async function fetchIcsFeedText(rawUrl: string): Promise<string> {
+  if (rawUrl.startsWith('/')) {
+    const baseCandidates = [
+      process.env.SITE_URL,
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:5174',
+    ].filter(( candidate ): candidate is string => Boolean(candidate));
+    for (const base of [...new Set(baseCandidates)]) {
+      try {
+        const res = await fetch(`${base.replace(/\/$/, '')}${rawUrl}`, {
+          signal: AbortSignal.timeout(2_500),
+        });
+        if (res.ok) {
+          const text = await res.text();
+          if (text.length > MAX_ICS_BYTES) throw new Error('iCal feed exceeds 1 MB limit');
+          if (text.includes('BEGIN:VCALENDAR') || text.includes('BEGIN:VEVENT')) {
+            return text;
+          }
+        }
+      } catch {
+        // Try next candidate or fallback to built-in mock ICS
+      }
+    }
+    if (BUILTIN_MOCK_ICS[rawUrl]) {
+      return BUILTIN_MOCK_ICS[rawUrl];
+    }
+    throw new Error(`Mock iCal feed not found: ${rawUrl}`);
+  }
+
+  const res = await fetch(rawUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const text = await res.text();
+  if (text.length > MAX_ICS_BYTES) throw new Error('iCal feed exceeds 1 MB limit');
+  return text;
+}
 
 export const syncAll = internalAction({
   args: {},
   handler: async (ctx): Promise<void> => {
-    const targets: Array<{ unitId: Id<'units'>; imports: Array<{ url: string; label: string }> }> =
-      await ctx.runQuery(internal.icalImport.listImportTargets, {});
+    const targets: Array<{
+      unitId: Id<'units'>;
+      propertyId: Id<'properties'>;
+      imports: Array<{ url: string; label: string }>;
+    }> = await ctx.runQuery(internal.icalImport.listImportTargets, {});
 
     for (const target of targets) {
       for (const imp of target.imports) {
         // Per-feed isolation: one bad feed must never stop the rest.
         try {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-          let icsText: string;
-          try {
-            const response = await fetch(imp.url, { signal: controller.signal });
-            if (!response.ok) {
-              throw new Error(`HTTP ${response.status}`);
-            }
-            icsText = await response.text();
-          } finally {
-            clearTimeout(timeout);
-          }
+          const icsText = await fetchIcsFeedText(imp.url);
 
           const { events, warnings } = parseIcs(icsText);
           const result = await ctx.runMutation(internal.icalImport.applyUnitImport, {
@@ -89,6 +202,101 @@ export const syncAll = internalAction({
   },
 });
 
+/**
+ * Staff/demo action triggered by clicking "Đồng bộ ngay" in the Admin UI.
+ * Syncs all units with iCal feeds (optionally filtered to one property) and
+ * returns a summary of inserted/updated/removed/conflicting events.
+ */
+export const syncNow = action({
+  args: {
+    propertyId: v.id('properties'),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    syncedUnits: number;
+    feedsSynced: number;
+    failedFeeds: number;
+    inserted: number;
+    updated: number;
+    removed: number;
+    conflicts: number;
+    syncedAt: number;
+  }> => {
+    // `syncNow` changes bookings and sellable inventory. Keep the classroom
+    // demo frictionless, but require the same property-scoped staff access as
+    // the rest of the command center everywhere else.
+    if (process.env.DEMO_MODE !== 'true') {
+      const access = await ctx.runQuery(api.staff.propertyContext, { propertyId: args.propertyId });
+      if (!access.capabilities.includes('booking.write')) {
+        throw new ConvexError('CAPABILITY_DENIED');
+      }
+    }
+    const allTargets: Array<{
+      unitId: Id<'units'>;
+      propertyId: Id<'properties'>;
+      imports: Array<{ url: string; label: string }>;
+    }> = await ctx.runQuery(internal.icalImport.listImportTargets, {});
+
+    const targets = allTargets.filter((t) => t.propertyId === args.propertyId);
+
+    let feedsSynced = 0;
+    let failedFeeds = 0;
+    let inserted = 0;
+    let updated = 0;
+    let removed = 0;
+    let conflicts = 0;
+
+    for (const target of targets) {
+      for (const imp of target.imports) {
+        try {
+          const icsText = await fetchIcsFeedText(imp.url);
+          const { events, warnings } = parseIcs(icsText);
+          const result = await ctx.runMutation(internal.icalImport.applyUnitImport, {
+            unitId: target.unitId,
+            label: imp.label,
+            events,
+          });
+          feedsSynced += 1;
+          inserted += result.inserted;
+          updated += result.updated;
+          removed += result.removed;
+          conflicts += result.conflicts;
+
+          const warningSuffix = warnings.length > 0 ? `; ${warnings.length} warning(s)` : '';
+          await ctx.runMutation(internal.icalImport.updateImportStatus, {
+            unitId: target.unitId,
+            url: imp.url,
+            lastSyncedAt: Date.now(),
+            lastStatus: `ok: ${events.length} events (inserted ${result.inserted}, updated ${result.updated}, removed ${result.removed}, conflicts ${result.conflicts})${warningSuffix}`,
+          });
+        } catch (error) {
+          failedFeeds += 1;
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          await ctx.runMutation(internal.icalImport.updateImportStatus, {
+            unitId: target.unitId,
+            url: imp.url,
+            lastSyncedAt: Date.now(),
+            lastStatus: `error: ${message}`,
+          });
+        }
+      }
+    }
+
+    return {
+      syncedUnits: targets.length,
+      feedsSynced,
+      failedFeeds,
+      inserted,
+      updated,
+      removed,
+      conflicts,
+      syncedAt: Date.now(),
+    };
+  },
+});
+
 /** Every active unit with at least one icalImports entry. (builder E) */
 export const listImportTargets = internalQuery({
   args: {},
@@ -98,6 +306,7 @@ export const listImportTargets = internalQuery({
       .filter((u) => u.status !== 'offline' && u.icalImports.length > 0)
       .map((u) => ({
         unitId: u._id,
+        propertyId: u.propertyId,
         imports: u.icalImports.map((i) => ({ url: i.url, label: i.label })),
       }));
   },
@@ -157,10 +366,25 @@ export const applyUnitImport = internalMutation({
       .query('bookings')
       .withIndex('by_unit_checkIn', (q) => q.eq('unitId', args.unitId))
       .collect();
+    const propertyBookings = await ctx.db
+      .query('bookings')
+      .withIndex('by_property_checkIn', (q) => q.eq('propertyId', unit.propertyId))
+      .collect();
     const existingByUid = new Map<string, Doc<'bookings'>>();
+    const manuallyResolvedUids = new Set<string>();
     for (const booking of unitBookings) {
       if (booking.status === 'external' && booking.source === source && booking.externalUid) {
         existingByUid.set(booking.externalUid, booking);
+      }
+    }
+    for (const booking of propertyBookings) {
+      if (
+        booking.source === source &&
+        booking.externalUid &&
+        booking.notes.some((n) => n.text.includes('Xử lý Double Booking')) &&
+        (booking.unitId !== unit._id || booking.status === 'cancelled')
+      ) {
+        manuallyResolvedUids.add(booking.externalUid);
       }
     }
 
@@ -174,6 +398,9 @@ export const applyUnitImport = internalMutation({
 
     for (const event of args.events) {
       seenUids.add(event.uid);
+      if (manuallyResolvedUids.has(event.uid)) {
+        continue;
+      }
       const existing = existingByUid.get(event.uid);
 
       if (!existing) {
@@ -230,7 +457,14 @@ export const applyUnitImport = internalMutation({
   },
 });
 
-/** Nights on this unit currently blocked by a NON-external booking (authoritative). */
+/**
+ * Nights on this unit currently blocked by ANY existing booking (internal or
+ * external). Including external nights here ensures that two overlapping iCal
+ * feeds (e.g., Airbnb 20-23/09 and Booking.com 22-24/09 on the same unit)
+ * are detected as a Double Booking conflict (`syncConflict = true`) while
+ * keeping the first-imported nights authoritative and still recording both
+ * booking rows in the database.
+ */
 async function internalBlockedNights(ctx: MutationCtx, unitId: Id<'units'>): Promise<Set<string>> {
   const nights = await ctx.db
     .query('unitNights')
@@ -238,7 +472,7 @@ async function internalBlockedNights(ctx: MutationCtx, unitId: Id<'units'>): Pro
     .collect();
   const blocked = new Set<string>();
   for (const night of nights) {
-    if (night.kind !== 'external') blocked.add(night.date);
+    blocked.add(night.date);
   }
   return blocked;
 }
@@ -300,7 +534,7 @@ async function insertExternalBooking(
     syncConflict: conflict,
     confirmationCode: `EXT-${externalCode(event.uid)}`,
     statusHistory: [{ status: 'external', ts: now }],
-    notes: [],
+    notes: event.summary ? [{ ts: now, text: event.summary, by: source }] : [],
     createdAt: now,
     updatedAt: now,
   });
@@ -339,6 +573,7 @@ async function rewriteExternalNights(
     checkOut: event.endDate,
     nights: allNights.length,
     syncConflict: conflict,
+    syncConflictAcknowledgedAt: undefined,
     updatedAt: now,
   });
 
@@ -350,3 +585,442 @@ function externalCode(uid: string): string {
   const cleaned = uid.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
   return (cleaned.slice(0, 8) || 'UNKNOWN').padEnd(6, '0');
 }
+
+/**
+ * Re-evaluates all remaining external bookings on a unit after a conflicting
+ * booking has been moved or cancelled, healing their unitNights and clearing
+ * syncConflict when the overlap no longer exists.
+ */
+async function healExternalBookingsOnUnit(ctx: MutationCtx, unitId: Id<'units'>, now: number): Promise<void> {
+  const bookings = await ctx.db
+    .query('bookings')
+    .withIndex('by_unit_checkIn', (q) => q.eq('unitId', unitId))
+    .collect();
+  const externals = bookings.filter((b) => b.status === 'external');
+  for (const ext of externals) {
+    await rewriteExternalNights(
+      ctx,
+      ext,
+      {
+        uid: ext.externalUid ?? ext.confirmationCode,
+        startDate: ext.checkIn,
+        endDate: ext.checkOut,
+      },
+      now,
+    );
+  }
+}
+
+/**
+ * Dashboard query for Admin iCal Sync & Double Booking Conflict Alert Center.
+ * Returns all units with their iCal feed configurations, sync statuses, and
+ * active Double Booking conflicts (both iCal-vs-iCal and iCal-vs-Internal).
+ */
+export const dashboardForProperty = query({
+  args: {
+    propertyId: v.optional(v.id('properties')),
+  },
+  handler: async (ctx, args) => {
+    let property: Doc<'properties'> | null = null;
+    if (args.propertyId) {
+      property = await ctx.db.get(args.propertyId);
+    } else {
+      const song = await ctx.db
+        .query('properties')
+        .withIndex('by_slug', (q) => q.eq('slug', 'song-homestay'))
+        .first();
+      property = song ?? (await ctx.db.query('properties').first());
+    }
+    if (!property) return null;
+
+    if (process.env.DEMO_MODE !== 'true') {
+      await requirePropertyCapability(ctx, property._id, 'booking.read');
+    }
+
+    const units = await ctx.db
+      .query('units')
+      .withIndex('by_property', (q) => q.eq('propertyId', property._id))
+      .collect();
+    units.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+
+    const allBookings = await ctx.db
+      .query('bookings')
+      .withIndex('by_property_checkIn', (q) => q.eq('propertyId', property._id))
+      .collect();
+    const activeStatuses = new Set(['hold', 'confirmed', 'checked_in', 'external']);
+    const activeBookings = allBookings.filter((b) => activeStatuses.has(b.status));
+
+    const guestsById = new Map<Id<'guests'>, Doc<'guests'>>();
+    for (const b of activeBookings) {
+      if (b.guestId && !guestsById.has(b.guestId)) {
+        const g = await ctx.db.get(b.guestId);
+        if (g) guestsById.set(b.guestId, g);
+      }
+    }
+
+    const nightsByUnit = new Map<Id<'units'>, Set<string>>();
+    for (const u of units) {
+      const unitNights = await ctx.db
+        .query('unitNights')
+        .withIndex('by_unit_date', (q) => q.eq('unitId', u._id))
+        .collect();
+      nightsByUnit.set(u._id, new Set(unitNights.map((n) => n.date)));
+    }
+
+    function resolveGuestName(b: Doc<'bookings'>): string {
+      if (b.guestId) {
+        const g = guestsById.get(b.guestId);
+        if (g?.name) return g.name;
+      }
+      if (b.notes.length > 0 && b.notes[0].text) {
+        return b.notes[0].text;
+      }
+      return b.status === 'external' ? `Khách ${b.source.replace('ical:', '')}` : 'Khách đặt phòng';
+    }
+
+    function availableUnitsForRange(excludeUnitId: Id<'units'>, checkIn: string, checkOut: string) {
+      const rangeNights = nightsInRange(checkIn, checkOut);
+      return units
+        .filter((u) => u.status === 'active' && u._id !== excludeUnitId)
+        .filter((u) => {
+          const occupied = nightsByUnit.get(u._id) ?? new Set<string>();
+          return rangeNights.every((d) => !occupied.has(d));
+        })
+        .map((u) => ({ unitId: u._id, name: u.name, slug: u.slug }));
+    }
+
+    const conflicts: Array<{
+      conflictId: string;
+      unitId: Id<'units'>;
+      unitName: string;
+      unitSlug: string;
+      overlapStart: string;
+      overlapEnd: string;
+      overlapNights: string[];
+      bookingA: {
+        bookingId: Id<'bookings'>;
+        confirmationCode: string;
+        source: string;
+        status: string;
+        checkIn: string;
+        checkOut: string;
+        nights: number;
+        guestName: string;
+        syncConflict: boolean;
+        totalCents?: number;
+        notes: Array<{ ts: number; text: string; by: string }>;
+      };
+      bookingB: {
+        bookingId: Id<'bookings'>;
+        confirmationCode: string;
+        source: string;
+        status: string;
+        checkIn: string;
+        checkOut: string;
+        nights: number;
+        guestName: string;
+        syncConflict: boolean;
+        totalCents?: number;
+        notes: Array<{ ts: number; text: string; by: string }>;
+      };
+      availableUnitsForA: Array<{ unitId: Id<'units'>; name: string; slug: string }>;
+      availableUnitsForB: Array<{ unitId: Id<'units'>; name: string; slug: string }>;
+    }> = [];
+
+    for (const unit of units) {
+      const unitActive = activeBookings
+        .filter((b) => b.unitId === unit._id)
+        .sort((a, b) => a.checkIn.localeCompare(b.checkIn) || a.createdAt - b.createdAt);
+
+      for (let i = 0; i < unitActive.length; i += 1) {
+        for (let j = i + 1; j < unitActive.length; j += 1) {
+          const b1 = unitActive[i];
+          const b2 = unitActive[j];
+          // Half-open [checkIn, checkOut) overlap check:
+          // If b1.checkOut === b2.checkIn (e.g. 23/09 checkout and 23/09 check-in),
+          // b2.checkIn < b1.checkOut is FALSE -> no conflict!
+          if (
+            b1.checkIn < b2.checkOut &&
+            b2.checkIn < b1.checkOut &&
+            !b1.syncConflictAcknowledgedAt &&
+            !b2.syncConflictAcknowledgedAt
+          ) {
+            const overlapStart = b1.checkIn > b2.checkIn ? b1.checkIn : b2.checkIn;
+            const overlapEnd = b1.checkOut < b2.checkOut ? b1.checkOut : b2.checkOut;
+            const overlapNights = nightsInRange(overlapStart, overlapEnd);
+            conflicts.push({
+              conflictId: `${b1._id}:${b2._id}`,
+              unitId: unit._id,
+              unitName: unit.name,
+              unitSlug: unit.slug,
+              overlapStart,
+              overlapEnd,
+              overlapNights,
+              bookingA: {
+                bookingId: b1._id,
+                confirmationCode: b1.confirmationCode,
+                source: b1.source,
+                status: b1.status,
+                checkIn: b1.checkIn,
+                checkOut: b1.checkOut,
+                nights: b1.nights,
+                guestName: resolveGuestName(b1),
+                syncConflict: Boolean(b1.syncConflict),
+                totalCents: b1.priceBreakdown?.totalCents,
+                notes: b1.notes,
+              },
+              bookingB: {
+                bookingId: b2._id,
+                confirmationCode: b2.confirmationCode,
+                source: b2.source,
+                status: b2.status,
+                checkIn: b2.checkIn,
+                checkOut: b2.checkOut,
+                nights: b2.nights,
+                guestName: resolveGuestName(b2),
+                syncConflict: Boolean(b2.syncConflict),
+                totalCents: b2.priceBreakdown?.totalCents,
+                notes: b2.notes,
+              },
+              availableUnitsForA: availableUnitsForRange(unit._id, b1.checkIn, b1.checkOut),
+              availableUnitsForB: availableUnitsForRange(unit._id, b2.checkIn, b2.checkOut),
+            });
+          }
+        }
+      }
+    }
+
+    return {
+      property: {
+        propertyId: property._id,
+        name: property.name,
+        slug: property.slug,
+        currency: property.currency,
+      },
+      units: units.map((u) => ({
+        unitId: u._id,
+        name: u.name,
+        slug: u.slug,
+        status: u.status,
+        icalExportToken: u.icalExportToken,
+        icalImports: u.icalImports,
+      })),
+      externalBookings: activeBookings
+        .filter((b) => b.status === 'external')
+        .map((b) => ({
+          bookingId: b._id,
+          unitId: b.unitId,
+          unitName: units.find((u) => u._id === b.unitId)?.name ?? 'Phòng',
+          confirmationCode: b.confirmationCode,
+          source: b.source,
+          checkIn: b.checkIn,
+          checkOut: b.checkOut,
+          nights: b.nights,
+          syncConflict: Boolean(b.syncConflict),
+          guestName: resolveGuestName(b),
+        })),
+      conflicts,
+    };
+  },
+});
+
+/**
+ * Configure iCal import feeds on a unit (Admin Settings / Command Center).
+ */
+export const configureUnitFeeds = mutation({
+  args: {
+    unitId: v.id('units'),
+    imports: v.array(
+      v.object({
+        label: v.string(),
+        url: v.string(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const unit = await ctx.db.get(args.unitId);
+    if (!unit) throw new ConvexError('UNIT_NOT_FOUND');
+    if (process.env.DEMO_MODE !== 'true') {
+      await requireMutationPropertyCapability(ctx, unit.propertyId, 'property.configure', 'ical.configure');
+    }
+
+    const sanitized = args.imports
+      .map((imp) => ({ label: imp.label.trim().slice(0, 80), url: validateFeedUrl(imp.url) }))
+      .filter((imp) => imp.label.length > 0 && imp.url.length > 0)
+      .map((imp) => {
+        const existing = unit.icalImports.find((e) => e.url === imp.url && e.label === imp.label);
+        return {
+          label: imp.label,
+          url: imp.url,
+          lastSyncedAt: existing?.lastSyncedAt,
+          lastStatus: existing?.lastStatus,
+        };
+      });
+
+    await ctx.db.patch(args.unitId, { icalImports: sanitized });
+    return { updated: true, count: sanitized.length };
+  },
+});
+
+/**
+ * One-click preset loader for Sóng Homestay iCal Demo Scenarios on a unit:
+ * - 'conflict_partial': Airbnb (20-23/09) + Booking.com (22-24/09) -> Double Booking on 22-23/09
+ * - 'conflict_exact': Airbnb (20-23/09) + Booking.com (20-23/09) -> Exact Double Booking on 20-23/09
+ * - 'boundary_safe': Airbnb (20-23/09) + Booking.com (23-25/09) -> Check-out = Check-in (23/09), NO conflict
+ * - 'no_overlap': Airbnb (20-23/09) + Booking.com (25-28/09) -> Disjoint dates, NO conflict
+ */
+export const applyDemoScenario = mutation({
+  args: {
+    unitId: v.id('units'),
+    scenario: v.union(
+      v.literal('conflict_partial'),
+      v.literal('conflict_exact'),
+      v.literal('boundary_safe'),
+      v.literal('no_overlap'),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const unit = await ctx.db.get(args.unitId);
+    if (!unit) throw new ConvexError('UNIT_NOT_FOUND');
+    if (process.env.DEMO_MODE !== 'true') {
+      await requireMutationPropertyCapability(ctx, unit.propertyId, 'booking.write', 'ical.demo_scenario');
+    }
+
+    // Clear existing external bookings across the property that came from the demo feeds
+    // so re-running the scenario starts from a clean slate.
+    const propBookings = await ctx.db
+      .query('bookings')
+      .withIndex('by_property_checkIn', (q) => q.eq('propertyId', unit.propertyId))
+      .collect();
+    for (const b of propBookings) {
+      if (b.status === 'external' && (b.unitId === unit._id || b.externalUid?.includes('phong-a'))) {
+        await deleteNightsForBooking(ctx, b._id);
+        await ctx.db.delete(b._id);
+      }
+    }
+
+    const bookingUrlByScenario: Record<typeof args.scenario, string> = {
+      conflict_partial: '/mock-ical/booking-phong-a.ics',
+      conflict_exact: '/mock-ical/booking-exact-phong-a.ics',
+      boundary_safe: '/mock-ical/booking-boundary-phong-a.ics',
+      no_overlap: '/mock-ical/booking-safe-phong-a.ics',
+    };
+
+    const nextImports = [
+      { label: 'Airbnb', url: '/mock-ical/airbnb-phong-a.ics' },
+      { label: 'Booking.com', url: bookingUrlByScenario[args.scenario] },
+    ];
+
+    await ctx.db.patch(unit._id, { icalImports: nextImports });
+    return { configured: true, scenario: args.scenario, imports: nextImports };
+  },
+});
+
+/**
+ * Resolve a Double Booking conflict from the Admin dashboard:
+ * - 'move_unit': Move the selected booking to another available unit while preserving
+ *   its original price (BRULE06 / US13), and heal the remaining booking on the original unit.
+ * - 'cancel_booking': Cancel the selected booking, free its nights, and heal the remaining booking.
+ * - 'acknowledge': Record the staff resolution note and clear the syncConflict warning flag.
+ */
+export const resolveConflict = mutation({
+  args: {
+    bookingId: v.id('bookings'),
+    resolutionType: v.union(v.literal('move_unit'), v.literal('cancel_booking'), v.literal('acknowledge')),
+    targetUnitId: v.optional(v.id('units')),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const booking = await ctx.db.get(args.bookingId);
+    if (!booking) throw new ConvexError('BOOKING_NOT_FOUND');
+
+    let actorName = 'Admin Sóng Homestay';
+    if (process.env.DEMO_MODE !== 'true') {
+      const access = await requireMutationPropertyCapability(
+        ctx,
+        booking.propertyId,
+        'booking.write',
+        'ical.resolve_conflict',
+      );
+      actorName = access.profile.name;
+    }
+
+    const now = Date.now();
+    const originalUnitId = booking.unitId;
+    const customNote = args.note?.trim();
+
+    if (args.resolutionType === 'move_unit') {
+      if (!args.targetUnitId) throw new ConvexError('TARGET_UNIT_REQUIRED');
+      const targetUnit = await ctx.db.get(args.targetUnitId);
+      if (!targetUnit || targetUnit.propertyId !== booking.propertyId || targetUnit.status !== 'active') {
+        throw new ConvexError('INVALID_TARGET_UNIT');
+      }
+
+      const targetBlocked = await internalBlockedNights(ctx, targetUnit._id);
+      const neededNights = nightsInRange(booking.checkIn, booking.checkOut);
+      if (neededNights.some((d) => targetBlocked.has(d))) {
+        throw new ConvexError('TARGET_UNIT_UNAVAILABLE');
+      }
+
+      await deleteNightsForBooking(ctx, booking._id);
+      const kind = booking.status === 'external' ? 'external' : 'stay';
+      for (const date of neededNights) {
+        await ctx.db.insert('unitNights', {
+          unitId: targetUnit._id,
+          date,
+          bookingId: booking._id,
+          kind,
+        });
+      }
+
+      const resolutionText = customNote
+        ? `Xử lý Double Booking (Đổi sang ${targetUnit.name}, giữ nguyên giá gốc): ${customNote}`
+        : `Xử lý Double Booking: Đã chuyển sang ${targetUnit.name} (giữ nguyên giá gốc theo quy định).`;
+
+      await ctx.db.patch(booking._id, {
+        unitId: targetUnit._id,
+        unitTypeId: targetUnit.unitTypeId,
+        syncConflict: false,
+        syncConflictAcknowledgedAt: undefined,
+        notes: [...booking.notes, { ts: now, text: resolutionText, by: actorName }],
+        updatedAt: now,
+      });
+
+      await healExternalBookingsOnUnit(ctx, originalUnitId, now);
+      await markPropertyDirtyInline(ctx, booking.propertyId);
+      return { resolved: true, action: 'move_unit', targetUnitName: targetUnit.name };
+    }
+
+    if (args.resolutionType === 'cancel_booking') {
+      await deleteNightsForBooking(ctx, booking._id);
+      const resolutionText = customNote
+        ? `Xử lý Double Booking (Hủy đơn): ${customNote}`
+        : `Xử lý Double Booking: Đã hủy đơn trùng lịch.`;
+
+      await ctx.db.patch(booking._id, {
+        status: 'cancelled',
+        syncConflict: false,
+        syncConflictAcknowledgedAt: undefined,
+        statusHistory: [...booking.statusHistory, { status: 'cancelled', ts: now }],
+        notes: [...booking.notes, { ts: now, text: resolutionText, by: actorName }],
+        updatedAt: now,
+      });
+
+      await healExternalBookingsOnUnit(ctx, originalUnitId, now);
+      await markPropertyDirtyInline(ctx, booking.propertyId);
+      return { resolved: true, action: 'cancel_booking' };
+    }
+
+    const resolutionText = customNote
+      ? `Đã xử lý trên OTA: ${customNote}`
+      : `Đã kiểm tra và xử lý xung đột trực tiếp trên OTA.`;
+
+    await ctx.db.patch(booking._id, {
+      syncConflict: false,
+      syncConflictAcknowledgedAt: now,
+      notes: [...booking.notes, { ts: now, text: resolutionText, by: actorName }],
+      updatedAt: now,
+    });
+    return { resolved: true, action: 'acknowledge' };
+  },
+});

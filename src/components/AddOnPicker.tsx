@@ -20,7 +20,7 @@ export function AddOnPicker({ addOns, selected, onChange, currency = 'CAD' }: Ad
 
   return (
     <fieldset className="space-y-3">
-      <legend className="field-label">Add-ons</legend>
+      <legend className="field-label">Dịch vụ bổ sung</legend>
       {addOns.map((addOn) => {
         const quantity = selected[addOn.addOnId] ?? 0;
         const checked = quantity > 0;

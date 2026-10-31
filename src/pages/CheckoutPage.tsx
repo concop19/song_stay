@@ -56,6 +56,7 @@ export function CheckoutPage() {
   // describes the one property this deployment serves.
   const propertyConfigs = useQuery(api.properties.configList);
   const confirmSimulated = useMutation(api.bookings.confirmSimulated);
+  const confirmPayAtProperty = useMutation(api.bookings.confirmPayAtProperty);
   const createCheckoutSession = useAction(api.payments.checkout.createCheckoutSession);
 
   const [now, setNow] = useState(() => Date.now());
@@ -109,6 +110,24 @@ export function CheckoutPage() {
         email: normalizedGuestEmail,
       });
       // Navigation happens reactively once the query reflects 'confirmed'.
+    } catch (error) {
+      setPayError(extractErrorMessage(error));
+    } finally {
+      setPaying(false);
+      setPayingProvider(null);
+    }
+  }
+
+  async function handlePayAtProperty() {
+    setPaying(true);
+    setPayingProvider('pay_at_property');
+    setPayError(null);
+    try {
+      await confirmPayAtProperty({
+        bookingId: bookingId as Id<'bookings'>,
+        confirmationCode: code ?? '',
+        email: normalizedGuestEmail,
+      });
     } catch (error) {
       setPayError(extractErrorMessage(error));
     } finally {
@@ -285,7 +304,14 @@ export function CheckoutPage() {
           </>
         ) : null}
 
-        {demoMode ? (
+        {booking.payAtPropertyEnabled ? (
+          <>
+            <button type="button" className="btn-primary mt-6 w-full" disabled={expired || paying} onClick={() => void handlePayAtProperty()}>
+              {payingProvider === 'pay_at_property' ? 'Đang xác nhận…' : 'Xác nhận đặt phòng — thanh toán tại homestay'}
+            </button>
+            <p className="mt-2 text-center text-xs text-stone-500">Không thanh toán trực tuyến. Sóng Homestay sẽ liên hệ xác nhận tiền cọc hoặc thanh toán khi nhận phòng.</p>
+          </>
+        ) : demoMode ? (
           <>
             <button
               type="button"

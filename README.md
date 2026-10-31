@@ -1,5 +1,9 @@
 # OpenStays
 
+> **Bản triển khai đồ án Sóng Homestay:** hồ sơ phạm vi, BRD, ERD, DFD,
+> wireframe, test/UAT, hướng dẫn và kịch bản demo nằm tại
+> [`docs/song-homestay/`](./docs/song-homestay/README.md).
+
 > **Bitcoin++ Toronto 2026 hackathon branch:** “Consensus Commons” adds
 > authoritative Zaprite sandbox reconciliation, Wavelength signet payments,
 > privacy-safe OpenTimestamps receipts, one-time 1,000 signet-sat rewards,
@@ -96,7 +100,7 @@ Shipped in the source tree; operator configuration and live acceptance remain de
 - **Two Wavelength checkout paths** — the embedded self-custodial signet
   wallet remains primary; a valid merchant BOLT11 also offers **Pay using
   Wavelength’s official demo wallet** at
-  <https://wavelength.lightning.engineering/demo/>. Both paths pay the same
+  [https://wavelength.lightning.engineering/demo/](https://wavelength.lightning.engineering/demo/). Both paths pay the same
   invoice, and only the authenticated merchant receive confirms the booking.
 
 ### Property-scoped operations
@@ -149,19 +153,18 @@ live. Your real inventory is **data, not code** — see `docs/configuration.md`.
 The versioned HTTP API (`/api/v1`, API-key auth) exposes booking and property
 operations backed by the same Convex queries and mutations. See the API guide
 for the supported operations and permissions. A standalone CLI + MCP server ship in [`cli/`](./cli) as a
-thin, well-tested client over that API: `openstays health|properties|
-availability|bookings|hold|cancel|...`, plus `openstays mcp` for MCP clients
+thin, well-tested client over that API: `openstays health|properties| availability|bookings|hold|cancel|...`, plus `openstays mcp` for MCP clients
 like Claude. See [docs/automation.md](./docs/automation.md) for the full
 guide (getting a key, every command, MCP client config).
 
 ## Stack
 
-| Layer | Choice | Why |
-|---|---|---|
-| Backend | [Convex](https://convex.dev) | Serializable transactions (booking safety), realtime queries, crons, file storage, HTTP endpoints. Free tier; self-hostable. |
-| Frontend | React + Vite + TypeScript + Tailwind | Static output — host anywhere (GitHub Pages, Cloudflare Pages, Netlify…). |
-| Payments | Stripe + Square; experimental Zaprite + Wavelength | Hosted providers share an interface; Wavelength stays a separate authenticated, signet-only bridge rail. |
-| Email | OpenStays Mail | Provider-neutral durable queue with generic SMTP, local Mailpit, optional Resend, and safe log-only fallback. |
+| Layer    | Choice                                             | Why                                                                                                                          |
+| -------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Backend  | [Convex](https://convex.dev)                        | Serializable transactions (booking safety), realtime queries, crons, file storage, HTTP endpoints. Free tier; self-hostable. |
+| Frontend | React + Vite + TypeScript + Tailwind               | Static output — host anywhere (GitHub Pages, Cloudflare Pages, Netlify…).                                                  |
+| Payments | Stripe + Square; experimental Zaprite + Wavelength | Hosted providers share an interface; Wavelength stays a separate authenticated, signet-only bridge rail.                     |
+| Email    | OpenStays Mail                                     | Provider-neutral durable queue with generic SMTP, local Mailpit, optional Resend, and safe log-only fallback.                |
 
 ## Project principles
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useAction, useQuery } from 'convex/react';
+import { useAction, useMutation, useQuery } from 'convex/react';
 import { Clock, CreditCard } from 'lucide-react';
 
 import { api } from '../../convex/_generated/api';
@@ -29,6 +29,7 @@ export function ProductionCheckoutPage() {
   const providerInfo = useQuery(api.payments.checkout.availableProviders);
   const propertyConfigs = useQuery(api.properties.configList);
   const createCheckoutSession = useAction(api.payments.checkout.createCheckoutSession);
+  const confirmPayAtProperty = useMutation(api.bookings.confirmPayAtProperty);
   const [now, setNow] = useState(() => Date.now());
   const [payingProvider, setPayingProvider] = useState<string | null>(null);
   const [payError, setPayError] = useState<string | null>(null);
@@ -76,6 +77,17 @@ export function ProductionCheckoutPage() {
     }
   }
 
+  async function payAtProperty() {
+    setPayingProvider('pay_at_property');
+    setPayError(null);
+    try {
+      await confirmPayAtProperty({ bookingId: bookingId as Id<'bookings'>, confirmationCode: code ?? '', email: booking!.guestEmail });
+    } catch (error) {
+      setPayError(extractErrorMessage(error));
+      setPayingProvider(null);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-lg">
       <div className="card p-8">
@@ -92,7 +104,9 @@ export function ProductionCheckoutPage() {
         {booking.priceBreakdown ? <div className="mt-6 border-t border-stone-200 pt-6"><PriceBreakdownView price={booking.priceBreakdown} nights={booking.nights} currency={booking.currency} taxLabel={booking.taxLabel} /></div> : null}
         {holdTooStale ? <div className="mt-4"><ErrorMessage message="There is not enough time left on this hold to start payment. Please rebook for a fresh hold." /><Link to="/" className="btn-secondary mt-3 inline-flex">Start a new booking</Link></div> : null}
         {payError === 'PROVIDER_NOT_CONFIGURED' ? <div className="mt-4"><ErrorMessage message={property ? `Online payment is not configured yet. Please contact ${property.name} at ${property.email} or ${property.phone}.` : 'Online payment is not configured yet. Please contact the property.'} /></div> : payError ? <div className="mt-4"><ErrorMessage message={payError} /></div> : null}
-        {providerInfo === undefined || propertyConfigs === undefined ? <div className="mt-6"><Spinner label="Loading payment options…" /></div> : providerInfo.providers.length === 0 ? (
+        {booking.payAtPropertyEnabled ? (
+          <><button type="button" className="btn-primary mt-6 w-full" disabled={expired || payingProvider !== null} onClick={() => void payAtProperty()}>{payingProvider === 'pay_at_property' ? 'Đang xác nhận…' : 'Xác nhận đặt phòng — thanh toán tại homestay'}</button><p className="mt-2 text-center text-xs text-stone-500">Không phát sinh thanh toán trực tuyến.</p></>
+        ) : providerInfo === undefined || propertyConfigs === undefined ? <div className="mt-6"><Spinner label="Loading payment options…" /></div> : providerInfo.providers.length === 0 ? (
           <p className="mt-6 rounded-lg bg-stone-50 px-4 py-3 text-sm text-stone-600">Online payment is not configured for this property yet.</p>
         ) : (
           <div className={`mt-6 grid gap-3 ${providerInfo.providers.length > 1 ? 'sm:grid-cols-2' : ''}`}>

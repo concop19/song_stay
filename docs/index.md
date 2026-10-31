@@ -39,3 +39,8 @@ features:
       folios, night audit, groups, and seasonal records—released per property
       behind reversible feature flags.
 ---
+
+## Sóng Homestay classroom implementation
+
+The Vietnamese project handoff pack is available in
+[the Sóng Homestay documentation set](./song-homestay/README.md).

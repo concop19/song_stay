@@ -11,6 +11,7 @@ crons.interval(
   { limit: 25 },
 );
 crons.interval('ical import sync', { minutes: 15 }, internal.icalImport.syncAll, {});
+crons.daily('residence data retention', { hourUTC: 18, minuteUTC: 0 }, internal.residence.purgeExpired, {});
 crons.interval('channex ari flush', { minutes: 1 }, internal.channel.ari.flushDirty, {});
 crons.interval('channex booking poll', { minutes: 2 }, internal.channel.ingest.syncBookingRevisions, {});
 crons.daily('channex full resync', { hourUTC: 8, minuteUTC: 30 }, internal.channel.ari.flushDirty, {

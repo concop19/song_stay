@@ -107,6 +107,12 @@ function parseIcsDate(value: string): string | null {
   const month = Number(m);
   const day = Number(d);
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const candidate = new Date(Date.UTC(Number(y), month - 1, day));
+  if (
+    candidate.getUTCFullYear() !== Number(y) ||
+    candidate.getUTCMonth() !== month - 1 ||
+    candidate.getUTCDate() !== day
+  ) return null;
   return `${y}-${m}-${d}`;
 }
 
@@ -171,6 +177,9 @@ function parseVEvent(lines: string[]): IcalEvent | null {
   }
   if (!endDate) {
     endDate = addOneDay(startDate);
+  }
+  if (endDate <= startDate) {
+    throw new Error(`Malformed VEVENT: DTEND must be after DTSTART (uid=${uid})`);
   }
 
   return { uid, startDate, endDate, summary };

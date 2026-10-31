@@ -148,6 +148,10 @@ export default defineSchema({
     checkInTime: v.string(), // '16:00'
     checkOutTime: v.string(), // '11:00'
     active: v.boolean(),
+    // Allows a guest to confirm a direct reservation without an online
+    // gateway and settle at the property. Used by Sóng Homestay because a
+    // real payment gateway is explicitly outside the classroom MVP scope.
+    allowPayAtProperty: v.optional(v.boolean()),
     // Channel manager (Channex) mapping — the Channex Property UUID this maps
     // to. Unset = not connected. Dormant until set + CHANNEX_API_KEY present.
     channexPropertyId: v.optional(v.string()),
@@ -334,6 +338,11 @@ export default defineSchema({
     // it flags instead and staff resolve on the tape. (An OTA channelBookingId
     // conflict is an oversell to escalate immediately.)
     syncConflict: v.optional(v.boolean()),
+    // Staff may confirm that the collision was resolved directly on the OTA
+    // before the next iCal snapshot reflects the change. This timestamp keeps
+    // the acknowledged pair out of the active warning queue while preserving
+    // the imported booking and its audit notes.
+    syncConflictAcknowledgedAt: v.optional(v.number()),
     confirmationCode: v.string(), // 'OS-7K3M2Q'
     priceBreakdown: v.optional(priceBreakdownSchema),
     giftCertificateId: v.optional(v.id('giftCertificates')),
@@ -1161,4 +1170,29 @@ export default defineSchema({
     key: v.string(),
     value: v.string(), // JSON string
   }).index('by_key', ['key']),
+
+  // Khai báo tạm trú / tạm vắng cho khách lưu trú (Sóng Homestay - DS05 Khách lưu trú).
+  residenceRegistrations: defineTable({
+    propertyId: v.id('properties'),
+    bookingId: v.id('bookings'),
+    fullName: v.string(),
+    documentType: v.union(v.literal('cccd'), v.literal('passport'), v.literal('other')),
+    documentNumber: v.string(),
+    nationality: v.string(),
+    dateOfBirth: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    permanentAddress: v.optional(v.string()),
+    registrationType: v.union(v.literal('tam_tru'), v.literal('tam_vang')),
+    checkInDate: v.string(),
+    checkOutDate: v.string(),
+    reason: v.optional(v.string()),
+    status: v.union(v.literal('declared'), v.literal('verified')),
+    submittedBy: v.union(v.literal('guest'), v.literal('staff')),
+    consentAt: v.optional(v.number()),
+    retentionUntil: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_booking', ['bookingId'])
+    .index('by_property_createdAt', ['propertyId', 'createdAt']),
 });

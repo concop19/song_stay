@@ -18,20 +18,20 @@ export function PriceBreakdownView({
   return (
     <dl className="space-y-1.5 text-sm">
       <Row
-        label={`Nightly subtotal (${nights} night${nights === 1 ? '' : 's'})`}
+        label={`Tiền phòng (${nights} đêm)`}
         value={fmt(price.nightlySubtotalCents)}
       />
-      {price.addOnSubtotalCents > 0 ? <Row label="Add-ons" value={fmt(price.addOnSubtotalCents)} /> : null}
-      {price.promoDiscountCents > 0 ? <Row label="Promo discount" value={fmt(-price.promoDiscountCents)} /> : null}
+      {price.addOnSubtotalCents > 0 ? <Row label="Dịch vụ bổ sung" value={fmt(price.addOnSubtotalCents)} /> : null}
+      {price.promoDiscountCents > 0 ? <Row label="Mã giảm giá" value={fmt(-price.promoDiscountCents)} /> : null}
       <Row label={taxLabelOrDefault(taxLabel)} value={fmt(price.gstCents)} />
       <div className="my-2 border-t border-stone-200" />
-      <Row label="Total" value={fmt(price.totalCents)} strong />
+      <Row label="Tổng cộng" value={fmt(price.totalCents)} strong />
       {price.giftCertAppliedCents > 0 ? (
-        <Row label="Gift certificate applied" value={fmt(-price.giftCertAppliedCents)} />
+        <Row label="Phiếu quà tặng" value={fmt(-price.giftCertAppliedCents)} />
       ) : null}
-      <Row label="Due now (deposit)" value={fmt(price.depositDueCents)} strong />
+      <Row label="Tiền cọc dự kiến" value={fmt(price.depositDueCents)} strong />
       {price.balanceDueCents > 0 ? (
-        <Row label="Balance due at check-in" value={fmt(price.balanceDueCents)} />
+        <Row label="Còn lại khi nhận phòng" value={fmt(price.balanceDueCents)} />
       ) : null}
     </dl>
   );

@@ -13,6 +13,8 @@ import {
 } from '../../shared/commandCenter';
 import { CommandBookingTape } from '../components/CommandBookingTape';
 import { CommandActionPanel, type CommandAction } from '../components/CommandActionPanel';
+import { SongHomestayAdminPanel } from '../components/SongHomestayAdminPanel';
+import { SongHomestayManagementSection } from '../components/SongHomestayManagementSection';
 import { useAdminProperty } from '../components/AdminShell';
 import { Spinner } from '../components/Spinner';
 import { todayIso } from '../lib/dates';
@@ -236,6 +238,16 @@ export function AdminCommandPage() {
         </div>
       ) : null}
 
+      {property.slug === 'song-homestay' ? (
+        <>
+          <SongHomestayManagementSection propertyId={property.propertyId} />
+          <SongHomestayAdminPanel
+            propertyId={property.propertyId}
+            onJumpToDate={(isoDate) => setStartDate(isoDate)}
+          />
+        </>
+      ) : null}
+
       <section className="card space-y-4 p-4" aria-label="Command-center controls">
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn-secondary" disabled={!commandCenterEnabled || !canQuote} onClick={() => navigate('/admin/quotes?intent=reserve')}>Reserve</button>
@@ -246,8 +258,8 @@ export function AdminCommandPage() {
           <button type="button" className="btn-secondary" disabled={!commandCenterEnabled || !canPostFolio} onClick={() => navigate('/admin/folios?intent=retail')}>Retail</button>
         </div>
 
-        <div className="grid gap-3 xl:grid-cols-[minmax(15rem,2fr)_repeat(7,minmax(8rem,1fr))]">
-          <label className="relative">
+        <div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <label className="relative md:col-span-2">
             <span className="sr-only">Search operations</span>
             <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-stone-400" aria-hidden="true" />
             <input className="field-input pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Guest, code, unit, source…" />

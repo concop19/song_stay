@@ -140,6 +140,61 @@ describe('staff.grantStaff', () => {
   });
 });
 
+describe('staff.provisionSongDemoStaff', () => {
+  it('downgrades broad authority and scopes the login to Sóng Homestay', async () => {
+    vi.stubEnv('DEMO_MODE', 'true');
+    const t = convexTest(schema, modules);
+    const userId = await seedUser(t, 'admin@songhomestay.local', 'Old name');
+    const profileId = await t.run((ctx) => ctx.db.insert('staffProfiles', {
+      userId,
+      name: 'Old owner',
+      role: 'owner',
+      active: true,
+      createdAt: Date.now(),
+    }));
+    const otherPropertyId = await seedProperty(t);
+    await t.run((ctx) => ctx.db.insert('staffPropertyAssignments', {
+      staffProfileId: profileId,
+      userId,
+      propertyId: otherPropertyId,
+      role: 'owner',
+      active: true,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }));
+    const songPropertyId = await t.run((ctx) => ctx.db.insert('properties', {
+      name: 'Sóng Homestay',
+      slug: 'song-homestay',
+      timezone: 'Asia/Ho_Chi_Minh',
+      currency: 'VND',
+      taxRateBps: 0,
+      email: 'song@example.com',
+      phone: '0900000000',
+      address: 'Đà Nẵng',
+      checkInTime: '14:00',
+      checkOutTime: '12:00',
+      active: true,
+    }));
+
+    const result = await t.mutation((internal as any).staff.provisionSongDemoStaff, {
+      email: 'admin@songhomestay.local',
+      name: 'Quản trị Sóng Homestay',
+    });
+    expect(result).toMatchObject({ granted: true, propertyId: songPropertyId, role: 'manager' });
+
+    const state = await t.run(async (ctx) => ({
+      profile: await ctx.db.get(profileId),
+      assignments: await ctx.db
+        .query('staffPropertyAssignments')
+        .withIndex('by_profile', (q) => q.eq('staffProfileId', profileId))
+        .collect(),
+    }));
+    expect(state.profile).toMatchObject({ role: 'staff', active: true, name: 'Quản trị Sóng Homestay' });
+    expect(state.assignments.find((row) => row.propertyId === otherPropertyId)?.active).toBe(false);
+    expect(state.assignments.find((row) => row.propertyId === songPropertyId)).toMatchObject({ role: 'manager', active: true });
+  });
+});
+
 describe('staff.revokeStaff', () => {
   it('refuses to revoke the last active owner', async () => {
     const t = convexTest(schema, modules);
@@ -581,6 +636,26 @@ describe('per-property operational access', () => {
       timezone: 'America/Edmonton',
     });
     expect(rows[0].propertyId).not.toBe(firstPropertyId);
+  });
+
+  it('uses synthetic assignments in DEMO_MODE even for an authenticated non-staff user', async () => {
+    vi.stubEnv('DEMO_MODE', 'true');
+    const t = convexTest(schema, modules);
+    const propertyId = await seedProperty(t);
+    const ordinaryUserId = await seedUser(t, 'demo-browser@example.com');
+
+    const rows = await t.withIdentity(identityFor(ordinaryUserId)).query(
+      (api as any).staff.assignedProperties,
+      {},
+    );
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        propertyId,
+        role: 'owner',
+      }),
+    ]);
+    expect(rows[0].capabilities).toContain('booking.write');
   });
 
   it('returns only active property assignees without contact fields', async () => {

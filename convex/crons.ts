@@ -20,6 +20,9 @@ crons.interval(
 // has icalImports entries; per-feed failures are isolated inside syncAll.
 crons.interval('ical import sync', { minutes: 15 }, internal.icalImport.syncAll, {});
 
+// Delete guest identity declarations after their explicit retention window.
+crons.daily('residence data retention', { hourUTC: 18, minuteUTC: 0 }, internal.residence.purgeExpired, {});
+
 // Channel manager (Channex) — all no-ops until a property is connected +
 // CHANNEX_API_KEY is set. Flush dirty availability to OTAs every minute (the
 // oversell-window ceiling for changes not covered by the immediate post-hold

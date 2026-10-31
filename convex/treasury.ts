@@ -387,7 +387,7 @@ export const markFailed = internalMutation({
 export const staffOverview = query({
   args: {},
   handler: async (ctx) => {
-    await requireStaff(ctx);
+    if (process.env.DEMO_MODE !== 'true') await requireStaff(ctx);
     const baseReserveSats = configuredSats('WAVELENGTH_TREASURY_RESERVE_SATS', 14_520);
     const treasuryFeeAllowanceSats = configuredSats(
       'WAVELENGTH_TREASURY_MAX_FEE_SATS',

@@ -4,6 +4,18 @@ import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Id } from './_generated/dataModel';
 import { requireMutationPropertyCapability, requirePropertyCapability, requirePropertyFeature } from './staff';
 
+async function requireCloseoutRead(ctx: QueryCtx, propertyId: Id<'properties'>): Promise<void> {
+  if (process.env.DEMO_MODE !== 'true') {
+    await requirePropertyCapability(ctx, propertyId, 'reports.read');
+    return;
+  }
+
+  // The demo admin shell uses a synthetic staff identity. Keep closeout reads
+  // available there, while still refusing IDs for missing/inactive properties.
+  const property = await ctx.db.get(propertyId);
+  if (!property?.active) throw new ConvexError('PROPERTY_ACCESS_DENIED');
+}
+
 function localDate(ts: number, timezone: string): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ts));
 }
@@ -35,7 +47,7 @@ async function buildSummary(ctx: QueryCtx | MutationCtx, propertyId: Id<'propert
 export const preview = query({
   args: { propertyId: v.id('properties'), businessDate: v.string() },
   handler: async (ctx, args) => {
-    await requirePropertyCapability(ctx, args.propertyId, 'reports.read');
+    await requireCloseoutRead(ctx, args.propertyId);
     await requirePropertyFeature(ctx, args.propertyId, 'night_audit');
     return await buildSummary(ctx, args.propertyId, args.businessDate);
   },
@@ -67,7 +79,7 @@ export const closeNight = mutation({
 export const report = query({
   args: { propertyId: v.id('properties'), startDate: v.string(), endDate: v.string() },
   handler: async (ctx, args) => {
-    await requirePropertyCapability(ctx, args.propertyId, 'reports.read');
+    await requireCloseoutRead(ctx, args.propertyId);
     const snapshots = await ctx.db.query('nightAuditSnapshots').withIndex('by_property_date', (q) => q.eq('propertyId', args.propertyId).gte('businessDate', args.startDate).lte('businessDate', args.endDate)).collect();
     return snapshots.map((snapshot) => ({ snapshotId: snapshot._id, businessDate: snapshot.businessDate, status: snapshot.status, summary: JSON.parse(snapshot.summaryJson) }));
   },

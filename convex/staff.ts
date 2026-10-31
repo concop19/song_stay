@@ -167,6 +167,22 @@ export const propertyContext = query({
 export const assignedProperties = query({
   args: {},
   handler: async (ctx) => {
+    // DEMO_MODE is a deployment-wide synthetic console. Always return demo
+    // assignments here, including when the browser happens to retain a real
+    // Convex Auth session for a user who has no staff profile.
+    if (process.env.DEMO_MODE === 'true') {
+      const role: OperationalRole = 'owner';
+      const properties = (await ctx.db.query('properties').collect()).filter((property) => property.active);
+      properties.sort((a, b) => (a.slug === 'song-homestay' ? -1 : b.slug === 'song-homestay' ? 1 : 0));
+      return properties.map((property) => ({
+        propertyId: property._id,
+        name: property.name,
+        slug: property.slug,
+        timezone: property.timezone,
+        role,
+        capabilities: capabilitiesForRole(role),
+      }));
+    }
     const { profile } = await requireStaff(ctx);
     const assignments = await ctx.db
       .query('staffPropertyAssignments')
@@ -354,6 +370,74 @@ export const bootstrap = internalMutation({
     });
     await writeAudit(ctx, 'staff.bootstrap', `bootstrapped owner ${args.name}`);
     return { granted: true };
+  },
+});
+
+/** Local/demo-only helper for provisioning one real login scoped to Sóng
+ * Homestay. It intentionally removes broader assignments and grants manager
+ * capabilities without staff-management authority. */
+export const provisionSongDemoStaff = internalMutation({
+  args: { email: v.string(), name: v.string() },
+  handler: async (ctx, args) => {
+    if (process.env.DEMO_MODE !== 'true') {
+      throw new ConvexError('DEMO_MODE_REQUIRED');
+    }
+    const user = await ctx.db
+      .query('users')
+      .withIndex('email', (q) => q.eq('email', args.email.trim().toLowerCase()))
+      .unique();
+    if (!user) throw new ConvexError('USER_NOT_FOUND_SIGN_UP_FIRST');
+    const property = await ctx.db
+      .query('properties')
+      .withIndex('by_slug', (q) => q.eq('slug', 'song-homestay'))
+      .unique();
+    if (!property?.active) throw new ConvexError('SONG_HOMESTAY_NOT_FOUND');
+
+    const now = Date.now();
+    const existingProfile = await ctx.db
+      .query('staffProfiles')
+      .withIndex('by_userId', (q) => q.eq('userId', user._id))
+      .unique();
+    const staffProfileId = existingProfile?._id ?? await ctx.db.insert('staffProfiles', {
+      userId: user._id,
+      name: args.name.trim(),
+      role: 'staff',
+      active: true,
+      createdAt: now,
+    });
+    if (existingProfile) {
+      await ctx.db.patch(existingProfile._id, {
+        name: args.name.trim(),
+        role: 'staff',
+        active: true,
+      });
+    }
+
+    const assignments = await ctx.db
+      .query('staffPropertyAssignments')
+      .withIndex('by_profile', (q) => q.eq('staffProfileId', staffProfileId))
+      .collect();
+    for (const assignment of assignments) {
+      if (assignment.propertyId !== property._id && assignment.active) {
+        await ctx.db.patch(assignment._id, { active: false, updatedAt: now });
+      }
+    }
+    const existingAssignment = assignments.find((assignment) => assignment.propertyId === property._id);
+    if (existingAssignment) {
+      await ctx.db.patch(existingAssignment._id, { role: 'manager', active: true, updatedAt: now });
+    } else {
+      await ctx.db.insert('staffPropertyAssignments', {
+        staffProfileId,
+        userId: user._id,
+        propertyId: property._id,
+        role: 'manager',
+        active: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    await writeAudit(ctx, 'staff.demo_provision', `scoped ${args.email.trim().toLowerCase()} to Sóng Homestay`);
+    return { granted: true, propertyId: property._id, role: 'manager' as const };
   },
 });
 

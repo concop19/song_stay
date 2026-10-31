@@ -10,6 +10,7 @@ const identityFor = (userId: Id<'users'>) => ({ subject: `${userId}|test-session
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 async function seed(t: ReturnType<typeof convexTest>) {
@@ -24,6 +25,46 @@ async function seed(t: ReturnType<typeof convexTest>) {
 }
 
 describe('commerce closeout', () => {
+  it('keeps closeout reports staff-gated outside demo mode', async () => {
+    const t = convexTest(schema, modules);
+    const f = await seed(t);
+    await expect(
+      t.query((api as any).closeout.report, {
+        propertyId: f.propertyId,
+        startDate: '2026-08-01',
+        endDate: '2026-09-01',
+      }),
+    ).rejects.toThrow(/UNAUTHENTICATED|NOT_STAFF/);
+  });
+
+  it('allows the synthetic demo staff identity to read closeout reports', async () => {
+    vi.stubEnv('DEMO_MODE', 'true');
+    const t = convexTest(schema, modules);
+    const f = await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert('nightAuditSnapshots', {
+        propertyId: f.propertyId,
+        businessDate: '2026-08-31',
+        status: 'closed',
+        summaryJson: JSON.stringify({ postedRevenueCents: 2100, paymentsCents: 2100 }),
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+
+    const rows = await t.query((api as any).closeout.report, {
+      propertyId: f.propertyId,
+      startDate: '2026-08-01',
+      endDate: '2026-09-01',
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      businessDate: '2026-08-31',
+      status: 'closed',
+      summary: { postedRevenueCents: 2100, paymentsCents: 2100 },
+    });
+  });
+
   it('records manual settlement once and keeps the payment row authoritative', async () => {
     const t = convexTest(schema, modules); const f = await seed(t); const asOwner = t.withIdentity(identityFor(f.userId));
     await asOwner.mutation((api as any).commerce.postEntry, { propertyId: f.propertyId, folioId: f.folioId, kind: 'charge', description: 'Firewood', amountCents: 1000, taxCents: 50, expectedVersion: 0, requestId: 'req-charge' });

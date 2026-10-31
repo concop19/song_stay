@@ -18,6 +18,7 @@
     "audit:runtime": "node scripts/check-runtime-audit.mjs",
     "pretest:e2e:smoke": "npm run wavelength:runtime:check",
     "test:e2e:smoke": "playwright test --config playwright.config.ts",
+    "test:e2e:song": "playwright test --config playwright.song.config.ts",
     "convex:dev": "convex dev",
     "convex:codegen": "convex codegen",
     "seed": "convex run seed:run",

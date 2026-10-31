@@ -1,0 +1,14 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Booking.com//iCal Export 1.0//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:Song Homestay - Phong A (Booking.com Boundary Check-in=Check-out)
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20260923
+DTEND;VALUE=DATE:20260925
+UID:booking-phong-a-boundary-20260923@booking.com
+SUMMARY:Booking.com - Le Hoang Nam (23-25/09 Check-in=Check-out)
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR

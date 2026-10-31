@@ -153,7 +153,8 @@ export function UnitTypePage() {
     : null;
 
   const nights = range.checkIn && range.checkOut ? enumerateNights(range.checkIn, range.checkOut).length : 0;
-  const promoPlaceholder = detail.property.slug === 'consensus-commons' ? 'CONSENSUS10' : 'WELCOME10';
+  const defaultPromoPlaceholder = detail.property.slug === 'consensus-commons' ? 'CONSENSUS10' : 'WELCOME10';
+  const promoPlaceholder = detail.property.slug === 'song-homestay' ? 'SONGDANANG10' : defaultPromoPlaceholder;
 
   const canSubmit =
     !!ratePlan &&
@@ -206,7 +207,7 @@ export function UnitTypePage() {
         <p className="mt-3 text-stone-600">{unitType.description}</p>
         <p className="mt-3 flex items-center gap-1.5 text-sm text-stone-500">
           <Users className="h-4 w-4" aria-hidden="true" />
-          Sleeps up to {unitType.maxOccupancy}
+          Tối đa {unitType.maxOccupancy} khách
         </p>
         <StayMedia
           propertySlug={detail.property.slug}
@@ -215,7 +216,7 @@ export function UnitTypePage() {
           photoUrls={unitType.photoUrls}
         />
         {fromPriceCents !== null ? (
-          <p className="mt-4 text-lg font-semibold text-emerald-800">From {formatMoney(fromPriceCents, detail.property.currency)}/night</p>
+          <p className="mt-4 text-lg font-semibold text-emerald-800">Từ {formatMoney(fromPriceCents, detail.property.currency)}/đêm</p>
         ) : null}
       </div>
 
@@ -226,14 +227,14 @@ export function UnitTypePage() {
       ) : (
         <div className="grid gap-8 lg:grid-cols-2">
           <div className="card p-6">
-            <h2 className="mb-4 text-lg font-semibold text-stone-900">Choose your dates</h2>
+            <h2 className="mb-4 text-lg font-semibold text-stone-900">Chọn ngày lưu trú</h2>
             {availability === undefined ? (
               <Spinner label="Loading availability…" />
             ) : (
               <StayDateRangePicker fullyBlockedDates={fullyBlockedDates} range={range} onChange={setRange} />
             )}
             {range.checkIn && range.checkOut && !availableUnitId ? (
-              <p className="mt-3 text-sm text-red-700">No units are free for the whole selected range. Try different dates.</p>
+              <p className="mt-3 text-sm text-red-700">Không còn căn trống trong toàn bộ khoảng ngày đã chọn.</p>
             ) : null}
           </div>
 
@@ -250,7 +251,7 @@ export function UnitTypePage() {
             </div>
 
             <div className="card p-6">
-              <h2 className="mb-4 text-lg font-semibold text-stone-900">Discount code</h2>
+              <h2 className="mb-4 text-lg font-semibold text-stone-900">Mã giảm giá</h2>
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -293,13 +294,13 @@ export function UnitTypePage() {
             </div>
 
             <div className="card p-6">
-              <h2 className="mb-4 text-lg font-semibold text-stone-900">Your details</h2>
+              <h2 className="mb-4 text-lg font-semibold text-stone-900">Thông tin người đặt</h2>
               <GuestForm value={guest} onChange={setGuest} maxOccupancy={unitType.maxOccupancy} />
             </div>
 
             {pricePreview ? (
               <div className="card p-6">
-                <h2 className="mb-4 text-lg font-semibold text-stone-900">Price preview</h2>
+                <h2 className="mb-4 text-lg font-semibold text-stone-900">Chi tiết giá</h2>
                 <PriceBreakdownView price={pricePreview} nights={nights} currency={detail.property.currency} taxLabel={detail.property.taxLabel} />
               </div>
             ) : null}
@@ -307,7 +308,7 @@ export function UnitTypePage() {
             {submitError ? <ErrorMessage message={submitError} /> : null}
 
             <button type="button" className="btn-primary w-full" disabled={!canSubmit} onClick={handleSubmit}>
-              {submitting ? 'Holding your dates…' : 'Continue to payment'}
+              {submitting ? 'Đang giữ lịch…' : 'Tiếp tục xác nhận đặt phòng'}
             </button>
           </div>
         </div>

@@ -19,11 +19,13 @@ export type StaffGateState =
 
 export function useStaffGate(): StaffGateState {
   const { isLoading: authLoading, isAuthenticated } = useConvexAuth();
-  const me = useQuery(api.staff.me, isAuthenticated ? {} : 'skip');
+  // staff.me deliberately returns a synthetic profile on DEMO_MODE backends.
+  // Query it before requiring a browser auth session so the local/public demo
+  // can enter the read/write demo console without creating a fake account.
+  const me = useQuery(api.staff.me, {});
 
-  if (authLoading) return { status: 'loading' };
+  if (authLoading || me === undefined) return { status: 'loading' };
+  if (me !== null) return { status: 'staff', name: me.name, role: me.role as 'owner' | 'staff' };
   if (!isAuthenticated) return { status: 'signed_out' };
-  if (me === undefined) return { status: 'loading' };
-  if (me === null) return { status: 'awaiting_access' };
-  return { status: 'staff', name: me.name, role: me.role as 'owner' | 'staff' };
+  return { status: 'awaiting_access' };
 }

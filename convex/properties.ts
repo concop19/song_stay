@@ -15,6 +15,21 @@ export const bySlug = query({
       .query('unitTypes')
       .withIndex('by_property', (q) => q.eq('propertyId', property._id))
       .collect();
+    const [ratePlans, addOns] = await Promise.all([
+      ctx.db
+        .query('ratePlans')
+        .withIndex('by_property', (q) => q.eq('propertyId', property._id))
+        .collect(),
+      ctx.db
+        .query('addOns')
+        .withIndex('by_property', (q) => q.eq('propertyId', property._id).eq('active', true))
+        .collect(),
+    ]);
+    const rateByUnitType = new Map(
+      ratePlans
+        .filter((ratePlan) => ratePlan.active)
+        .map((ratePlan) => [ratePlan.unitTypeId, ratePlan]),
+    );
 
     return {
       propertyId: property._id,
@@ -39,7 +54,14 @@ export const bySlug = query({
           maxOccupancy: t.maxOccupancy,
           amenities: t.amenities,
           comingSoon: t.comingSoon,
+          fromPriceCents: rateByUnitType.get(t._id)?.baseNightlyCents ?? null,
         })),
+      addOns: addOns.map((addOn) => ({
+        addOnId: addOn._id,
+        name: addOn.name,
+        priceCents: addOn.priceCents,
+        unitLabel: addOn.unitLabel,
+      })),
     };
   },
 });
@@ -69,6 +91,7 @@ export const configList = query({
         address: p.address,
         checkInTime: p.checkInTime,
         checkOutTime: p.checkOutTime,
+        allowPayAtProperty: p.allowPayAtProperty ?? false,
       }));
   },
 });
@@ -80,6 +103,7 @@ export const listActive = query({
     const properties = await ctx.db.query('properties').collect();
     return properties
       .filter((p) => p.active)
+      .sort((a, b) => (a.slug === 'song-homestay' ? -1 : b.slug === 'song-homestay' ? 1 : 0))
       .map((p) => ({ propertyId: p._id, name: p.name, slug: p.slug, address: p.address }));
   },
 });

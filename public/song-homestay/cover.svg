@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">Sóng Homestay Đà Nẵng</title>
+  <desc id="desc">Minh họa căn hộ nghỉ dưỡng gần biển Mỹ Khê</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#bae6fd"/><stop offset="1" stop-color="#f0fdfa"/></linearGradient>
+    <linearGradient id="sea" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#0ea5e9"/><stop offset="1" stop-color="#14b8a6"/></linearGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#sky)"/>
+  <circle cx="930" cy="145" r="72" fill="#fbbf24" opacity=".9"/>
+  <path d="M0 500 Q180 450 360 500 T720 500 T1080 500 T1320 500 V800 H0Z" fill="url(#sea)"/>
+  <path d="M0 610 Q180 560 360 610 T720 610 T1080 610 T1320 610" fill="none" stroke="#e0f2fe" stroke-width="18" opacity=".85"/>
+  <rect x="190" y="230" width="450" height="390" rx="14" fill="#fff" stroke="#0f766e" stroke-width="10"/>
+  <rect x="245" y="300" width="120" height="105" rx="8" fill="#bae6fd"/>
+  <rect x="465" y="300" width="120" height="105" rx="8" fill="#bae6fd"/>
+  <rect x="245" y="455" width="120" height="105" rx="8" fill="#bae6fd"/>
+  <rect x="465" y="445" width="100" height="175" rx="8" fill="#115e59"/>
+  <path d="M145 245 L415 90 L690 245Z" fill="#0f766e"/>
+  <path d="M765 650 Q810 460 855 650" fill="#854d0e"/>
+  <path d="M810 485 Q720 405 655 470 Q770 505 810 485Z" fill="#16a34a"/>
+  <path d="M810 490 Q895 390 1015 460 Q905 515 810 490Z" fill="#22c55e"/>
+  <text x="600" y="730" text-anchor="middle" font-family="system-ui,sans-serif" font-size="54" font-weight="700" fill="#fff">SÓNG HOMESTAY · ĐÀ NẴNG</text>
+</svg>

@@ -6,6 +6,11 @@ import { requireStaff, writeAudit } from './staff';
 
 const GUEST_PUBLIC_REFUND_REASON = 'guest_requested_public_contribution_refund';
 
+async function requireRefundStaffName(ctx: QueryCtx | MutationCtx): Promise<string> {
+  if (process.env.DEMO_MODE === 'true') return 'Demo staff';
+  return (await requireStaff(ctx)).profile.name;
+}
+
 async function authenticateGuest(
   ctx: QueryCtx | MutationCtx,
   confirmationCode: string,
@@ -103,7 +108,7 @@ export const requestForGuest = mutation({
 export const listOpen = query({
   args: {},
   handler: async (ctx) => {
-    await requireStaff(ctx);
+    if (process.env.DEMO_MODE !== 'true') await requireStaff(ctx);
     const cases = await ctx.db
       .query('refundCases')
       .withIndex('by_status_createdAt', (q) => q.eq('status', 'open'))
@@ -131,7 +136,7 @@ export const complete = mutation({
     externalReference: v.string(),
   },
   handler: async (ctx, args): Promise<{ completed: boolean }> => {
-    const { profile } = await requireStaff(ctx);
+    const staffName = await requireRefundStaffName(ctx);
     const externalReference = args.externalReference.trim();
     if (!externalReference || externalReference.length > 200) {
       throw new ConvexError('EXTERNAL_REFERENCE_REQUIRED');
@@ -150,7 +155,7 @@ export const complete = mutation({
         providerRefundId: externalReference,
         reason: refundCase.reason,
         ts: now,
-        by: profile.name,
+        by: staffName,
       },
     ];
     const totalRefunded = refunds.reduce((sum, refund) => sum + refund.amountCents, 0);
@@ -161,7 +166,7 @@ export const complete = mutation({
     await ctx.db.patch(refundCase._id, {
       status: 'completed',
       externalReference,
-      resolvedBy: profile.name,
+      resolvedBy: staffName,
       resolvedAt: now,
       updatedAt: now,
     });

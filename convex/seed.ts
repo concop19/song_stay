@@ -3,6 +3,13 @@ import type { MutationCtx } from './_generated/server';
 import type { Id } from './_generated/dataModel';
 import { CONSENSUS_COMMONS_PHOTO_URLS } from '../shared/consensusCommonsExperience';
 
+const SONG_HOMESTAY_PHOTO_URLS = [
+  '/song-homestay/apartment.webp',
+  '/song-homestay/studio.webp',
+  '/song-homestay/family.webp',
+  '/song-homestay/townhouse.webp',
+];
+
 /**
  * Seed the fictional "Pinewood Flats Campground" — the ONLY inventory that
  * ever lives in this repo. Real operators load their own inventory as data
@@ -14,6 +21,10 @@ import { CONSENSUS_COMMONS_PHOTO_URLS } from '../shared/consensusCommonsExperien
 export const run = internalMutation({
   args: {},
   handler: async (ctx) => {
+    const song = await ctx.db
+      .query('properties')
+      .withIndex('by_slug', (q) => q.eq('slug', 'song-homestay'))
+      .first();
     const pinewood = await ctx.db
       .query('properties')
       .withIndex('by_slug', (q) => q.eq('slug', 'pinewood-flats'))
@@ -22,12 +33,353 @@ export const run = internalMutation({
       .query('properties')
       .withIndex('by_slug', (q) => q.eq('slug', 'consensus-commons'))
       .first();
+    if (!song) await seedSongHomestay(ctx);
+    else {
+      await ctx.db.patch(song._id, { allowPayAtProperty: true });
+      const songTypes = await ctx.db.query('unitTypes').withIndex('by_property', (q) => q.eq('propertyId', song._id)).collect();
+      for (const unitType of songTypes) await ctx.db.patch(unitType._id, { photoUrls: SONG_HOMESTAY_PHOTO_URLS });
+    }
     if (!pinewood) await seedPinewoodFlats(ctx);
     if (!commons) await seedConsensusCommons(ctx);
     else await refreshConsensusCommons(ctx, commons._id);
-    return { seeded: !pinewood || !commons, pinewoodSeeded: !pinewood, consensusCommonsSeeded: !commons };
+    return {
+      seeded: !song || !pinewood || !commons,
+      songHomestaySeeded: !song,
+      pinewoodSeeded: !pinewood,
+      consensusCommonsSeeded: !commons,
+    };
   },
 });
+
+export async function seedSongHomestay(ctx: MutationCtx): Promise<void> {
+  const propertyId = await ctx.db.insert('properties', {
+    name: 'Sóng Homestay — Đà Nẵng',
+    slug: 'song-homestay',
+    timezone: 'Asia/Ho_Chi_Minh',
+    currency: 'VND',
+    taxRateBps: 800, // 8% VAT
+    taxLabel: 'VAT (8%)',
+    email: 'booking@songhomestay.vn',
+    phone: '0905 688 999',
+    address: 'Mỹ Khê, Quận Sơn Trà, TP. Đà Nẵng',
+    checkInTime: '14:00',
+    checkOutTime: '12:00',
+    active: true,
+    allowPayAtProperty: true,
+  });
+
+  const now = Date.now();
+
+  // 1. Căn hộ 2 phòng ngủ (3 căn ngắn hạn: Phòng A, Phòng B, Phòng C)
+  const apt2BrTypeId = await ctx.db.insert('unitTypes', {
+    propertyId,
+    name: 'Căn hộ Sóng 2 Phòng Ngủ (View Biển)',
+    slug: 'can-ho-2pn',
+    kind: 'room',
+    bookingMode: 'nightly',
+    description:
+      'Căn hộ 2 phòng ngủ hiện đại cách biển Mỹ Khê 150m, đầy đủ bếp riêng, phòng khách thoáng rộng và ban công đón gió biển.',
+    photoUrls: SONG_HOMESTAY_PHOTO_URLS,
+    maxOccupancy: 4,
+    amenities: ['Cách biển 150m', '2 Phòng ngủ', 'Bếp đầy đủ', 'Wi-Fi tốc độ cao', 'Máy giặt riêng', 'Ban công view biển'],
+    comingSoon: false,
+    sortOrder: 1,
+  });
+
+  // Phòng A: Gắn sẵn 2 nguồn iCal giả lập (Airbnb 20-23/09 và Booking.com 22-24/09) để demo Double Booking
+  await ctx.db.insert('units', {
+    propertyId,
+    unitTypeId: apt2BrTypeId,
+    name: 'Phòng A - Căn hộ 2PN',
+    slug: 'phong-a-can-ho-2pn',
+    status: 'active',
+    icalExportToken: seedToken('song-phong-a'),
+    icalImports: [
+      { label: 'Airbnb', url: '/mock-ical/airbnb-phong-a.ics' },
+      { label: 'Booking.com', url: '/mock-ical/booking-phong-a.ics' },
+    ],
+    sortOrder: 1,
+  });
+  await ctx.db.insert('units', {
+    propertyId,
+    unitTypeId: apt2BrTypeId,
+    name: 'Phòng B - Căn hộ 2PN',
+    slug: 'phong-b-can-ho-2pn',
+    status: 'active',
+    icalExportToken: seedToken('song-phong-b'),
+    icalImports: [],
+    sortOrder: 2,
+  });
+  await ctx.db.insert('units', {
+    propertyId,
+    unitTypeId: apt2BrTypeId,
+    name: 'Phòng C - Căn hộ 2PN',
+    slug: 'phong-c-can-ho-2pn',
+    status: 'active',
+    icalExportToken: seedToken('song-phong-c'),
+    icalImports: [],
+    sortOrder: 3,
+  });
+  await ctx.db.insert('ratePlans', {
+    propertyId,
+    unitTypeId: apt2BrTypeId,
+    name: 'Giá tiêu chuẩn ngắn hạn',
+    active: true,
+    currency: 'VND',
+    baseNightlyCents: 1_200_000_00, // 1.200.000 ₫/đêm
+    weeklyRateCents: 7_500_000_00,
+    seasons: [],
+    minStayNights: 1,
+    maxStayNights: 30,
+    minLeadTimeHours: 0,
+    maxAdvanceDays: 365,
+    prepBufferNights: 0,
+    depositPolicy: { type: 'percent', value: 50 },
+    cancellationPolicy: [
+      { daysBefore: 5, refundPercent: 100 },
+      { daysBefore: 2, refundPercent: 50 },
+      { daysBefore: 0, refundPercent: 0 },
+    ],
+  });
+
+  // 2. Nhà nguyên căn 2 phòng ngủ (1 căn ngắn hạn: Căn D)
+  const house2BrTypeId = await ctx.db.insert('unitTypes', {
+    propertyId,
+    name: 'Nhà Nguyên Căn Sóng 2 Phòng Ngủ',
+    slug: 'nha-nguyen-can-2pn',
+    kind: 'cabin',
+    bookingMode: 'nightly',
+    description:
+      'Nhà nguyên căn 2 tầng riêng tư có sân vườn BBQ nhỏ, 2 phòng ngủ khép kín, phù hợp gia đình hoặc nhóm bạn từ 4-5 khách.',
+    photoUrls: SONG_HOMESTAY_PHOTO_URLS,
+    maxOccupancy: 5,
+    amenities: ['Nhà nguyên căn riêng tư', 'Sân BBQ', '2 Phòng ngủ', 'Bếp & Phòng ăn', 'Chỗ đậu ô tô'],
+    comingSoon: false,
+    sortOrder: 2,
+  });
+  await ctx.db.insert('units', {
+    propertyId,
+    unitTypeId: house2BrTypeId,
+    name: 'Căn D - Nhà nguyên căn 2PN',
+    slug: 'can-d-nha-2pn',
+    status: 'active',
+    icalExportToken: seedToken('song-can-d'),
+    icalImports: [],
+    sortOrder: 4,
+  });
+  await ctx.db.insert('ratePlans', {
+    propertyId,
+    unitTypeId: house2BrTypeId,
+    name: 'Giá tiêu chuẩn ngắn hạn',
+    active: true,
+    currency: 'VND',
+    baseNightlyCents: 1_600_000_00, // 1.600.000 ₫/đêm
+    seasons: [],
+    minStayNights: 1,
+    maxStayNights: 30,
+    minLeadTimeHours: 0,
+    maxAdvanceDays: 365,
+    prepBufferNights: 0,
+    depositPolicy: { type: 'percent', value: 50 },
+    cancellationPolicy: [
+      { daysBefore: 5, refundPercent: 100 },
+      { daysBefore: 0, refundPercent: 0 },
+    ],
+  });
+
+  // 3. Villa 4 phòng ngủ (1 căn ngắn hạn: Căn E)
+  const villa4BrTypeId = await ctx.db.insert('unitTypes', {
+    propertyId,
+    name: 'Villa Sóng 4 Phòng Ngủ (Hồ Bơi Riêng)',
+    slug: 'villa-4pn',
+    kind: 'cabin',
+    bookingMode: 'nightly',
+    description:
+      'Biệt thự nghỉ dưỡng 4 phòng ngủ có hồ bơi riêng, phòng karaoke gia đình và không gian tiệc nướng ngoài trời.',
+    photoUrls: SONG_HOMESTAY_PHOTO_URLS,
+    maxOccupancy: 8,
+    amenities: ['Hồ bơi riêng', '4 Phòng ngủ lớn', 'Sân vườn BBQ', 'Bếp đảo hiện đại', 'Miễn phí gửi xe'],
+    comingSoon: false,
+    sortOrder: 3,
+  });
+  await ctx.db.insert('units', {
+    propertyId,
+    unitTypeId: villa4BrTypeId,
+    name: 'Căn E - Villa 4PN Hồ Bơi',
+    slug: 'can-e-villa-4pn',
+    status: 'active',
+    icalExportToken: seedToken('song-can-e'),
+    icalImports: [],
+    sortOrder: 5,
+  });
+  await ctx.db.insert('ratePlans', {
+    propertyId,
+    unitTypeId: villa4BrTypeId,
+    name: 'Giá tiêu chuẩn Villa 4PN',
+    active: true,
+    currency: 'VND',
+    baseNightlyCents: 3_500_000_00, // 3.500.000 ₫/đêm
+    seasons: [],
+    minStayNights: 1,
+    maxStayNights: 30,
+    minLeadTimeHours: 0,
+    maxAdvanceDays: 365,
+    prepBufferNights: 0,
+    depositPolicy: { type: 'percent', value: 50 },
+    cancellationPolicy: [
+      { daysBefore: 7, refundPercent: 100 },
+      { daysBefore: 0, refundPercent: 0 },
+    ],
+  });
+
+  // 4. Villa 6 phòng ngủ (1 căn ngắn hạn: Căn F)
+  const villa6BrTypeId = await ctx.db.insert('unitTypes', {
+    propertyId,
+    name: 'Villa Sóng 6 Phòng Ngủ (Sát Biển Mỹ Khê)',
+    slug: 'villa-6pn',
+    kind: 'cabin',
+    bookingMode: 'nightly',
+    description:
+      'Villa cao cấp 6 phòng ngủ dành cho đoàn đông đến 12 khách, hồ bơi tràn viền, sân thượng ngắm biển và khu vực bếp tiệc.',
+    photoUrls: SONG_HOMESTAY_PHOTO_URLS,
+    maxOccupancy: 12,
+    amenities: ['6 Phòng ngủ', 'Hồ bơi tràn viền', 'Sân thượng view biển', 'Phòng khách rộng', 'Khu BBQ đoàn'],
+    comingSoon: false,
+    sortOrder: 4,
+  });
+  await ctx.db.insert('units', {
+    propertyId,
+    unitTypeId: villa6BrTypeId,
+    name: 'Căn F - Villa 6PN Sát Biển',
+    slug: 'can-f-villa-6pn',
+    status: 'active',
+    icalExportToken: seedToken('song-can-f'),
+    icalImports: [],
+    sortOrder: 6,
+  });
+  await ctx.db.insert('ratePlans', {
+    propertyId,
+    unitTypeId: villa6BrTypeId,
+    name: 'Giá tiêu chuẩn Villa 6PN',
+    active: true,
+    currency: 'VND',
+    baseNightlyCents: 5_200_000_00, // 5.200.000 ₫/đêm
+    seasons: [],
+    minStayNights: 1,
+    maxStayNights: 30,
+    minLeadTimeHours: 0,
+    maxAdvanceDays: 365,
+    prepBufferNights: 0,
+    depositPolicy: { type: 'percent', value: 50 },
+    cancellationPolicy: [
+      { daysBefore: 7, refundPercent: 100 },
+      { daysBefore: 0, refundPercent: 0 },
+    ],
+  });
+
+  // 5. Nhà 2 phòng ngủ dài hạn (2 căn: Căn G, Căn H) -> Tổng cộng đủ 8 căn của Sóng Homestay
+  const longTermHouseTypeId = await ctx.db.insert('unitTypes', {
+    propertyId,
+    name: 'Nhà Sóng 2 Phòng Ngủ (Ưu Đãi Lưu Trú Dài Hạn)',
+    slug: 'nha-dai-han-2pn',
+    kind: 'cabin',
+    bookingMode: 'nightly',
+    description:
+      'Hai căn nhà 2 phòng ngủ yên tĩnh dành cho khách công tác, chuyên gia hoặc gia đình lưu trú dài ngày với mức giá ưu đãi.',
+    photoUrls: SONG_HOMESTAY_PHOTO_URLS,
+    maxOccupancy: 4,
+    amenities: ['Khu dân cư yên tĩnh', '2 Phòng ngủ', 'Bàn làm việc', 'Bếp & Máy giặt sấy', 'Internet cáp quang riêng'],
+    comingSoon: false,
+    sortOrder: 5,
+  });
+  await ctx.db.insert('units', {
+    propertyId,
+    unitTypeId: longTermHouseTypeId,
+    name: 'Căn G - Nhà dài hạn 2PN (Số 1)',
+    slug: 'can-g-nha-dai-han-1',
+    status: 'active',
+    icalExportToken: seedToken('song-can-g'),
+    icalImports: [],
+    sortOrder: 7,
+  });
+  await ctx.db.insert('units', {
+    propertyId,
+    unitTypeId: longTermHouseTypeId,
+    name: 'Căn H - Nhà dài hạn 2PN (Số 2)',
+    slug: 'can-h-nha-dai-han-2',
+    status: 'active',
+    icalExportToken: seedToken('song-can-h'),
+    icalImports: [],
+    sortOrder: 8,
+  });
+  await ctx.db.insert('ratePlans', {
+    propertyId,
+    unitTypeId: longTermHouseTypeId,
+    name: 'Giá ưu đãi lưu trú dài hạn',
+    active: true,
+    currency: 'VND',
+    baseNightlyCents: 750_000_00, // 750.000 ₫/đêm
+    weeklyRateCents: 4_500_000_00,
+    seasons: [],
+    minStayNights: 1,
+    maxStayNights: 90,
+    minLeadTimeHours: 0,
+    maxAdvanceDays: 365,
+    prepBufferNights: 0,
+    depositPolicy: { type: 'percent', value: 30 },
+    cancellationPolicy: [
+      { daysBefore: 7, refundPercent: 100 },
+      { daysBefore: 0, refundPercent: 0 },
+    ],
+  });
+
+  // Mã giảm giá mẫu cho Sóng Homestay
+  await ctx.db.insert('promoCodes', {
+    propertyId,
+    code: 'SONGDANANG10',
+    normalizedCode: 'SONGDANANG10',
+    kind: 'percent',
+    valueBps: 1_000, // Giảm 10%
+    description: 'Ưu đãi đặt phòng trực tiếp tại website Sóng Homestay — Giảm 10%',
+    oncePerGuest: false,
+    appliesToUnitTypes: [],
+    active: true,
+    redemptionCount: 0,
+    createdAt: now,
+  });
+
+  // 3 Dịch vụ bổ sung (Add-ons) theo yêu cầu đề tài: Thuê xe máy, Vé Bà Nà Hills, Đưa đón sân bay
+  await ctx.db.insert('addOns', {
+    propertyId,
+    name: 'Thuê xe máy (Tay ga AirBlade / Vision đời mới)',
+    priceCents: 150_000_00, // 150.000 ₫ / ngày
+    taxable: false,
+    unitLabel: 'ngày',
+    appliesTo: [],
+    active: true,
+    sortOrder: 1,
+  });
+  await ctx.db.insert('addOns', {
+    propertyId,
+    name: 'Vé cáp treo Bà Nà Hills (Khứ hồi + Buffet trưa)',
+    priceCents: 900_000_00, // 900.000 ₫ / vé
+    taxable: false,
+    unitLabel: 'vé',
+    appliesTo: [],
+    active: true,
+    sortOrder: 2,
+  });
+  await ctx.db.insert('addOns', {
+    propertyId,
+    name: 'Đưa đón sân bay Quốc tế Đà Nẵng (Xe riêng 4-7 chỗ)',
+    priceCents: 250_000_00, // 250.000 ₫ / chuyến
+    taxable: false,
+    unitLabel: 'chuyến',
+    appliesTo: [],
+    active: true,
+    sortOrder: 3,
+  });
+}
 
 /** Keep existing fictional demo deployments aligned with binding hackathon invariants. */
 async function refreshConsensusCommons(

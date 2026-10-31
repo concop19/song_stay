@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest } from 'convex-test';
-import { describe, expect, it } from 'vitest';
-import { internal } from './_generated/api';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
@@ -509,5 +509,118 @@ describe('syncAll', () => {
     );
     expect(bookings).toHaveLength(1);
     expect(bookings[0].source).toBe('ical:VRBO');
+  });
+});
+
+describe('Sóng Homestay iCal-vs-iCal Double Booking & conflict resolution', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('detects Double Booking between Airbnb (20-23/09) and Booking.com (22-24/09) on Phòng A and resolves by moving unit', async () => {
+    vi.stubEnv('DEMO_MODE', 'true');
+    const t = convexTest(schema, modules);
+    const fx = await seedUnit(t);
+    const secondUnitId = await t.run(async (ctx) => {
+      await ctx.db.patch(fx.unitId, {
+        name: 'Phòng A - Căn hộ 2PN',
+        icalImports: [
+          { url: '/mock-ical/airbnb-phong-a.ics', label: 'Airbnb' },
+          { url: '/mock-ical/booking-phong-a.ics', label: 'Booking.com' },
+        ],
+      });
+      return await ctx.db.insert('units', {
+        propertyId: fx.propertyId,
+        unitTypeId: fx.unitTypeId,
+        name: 'Phòng B - Căn hộ 2PN',
+        slug: 'phong-b',
+        status: 'active',
+        icalExportToken: 'test-token-phong-b',
+        icalImports: [],
+        sortOrder: 2,
+      });
+    });
+
+    const syncSummary = await t.action((api as any).icalImport.syncNow, {
+      propertyId: fx.propertyId,
+    });
+    expect(syncSummary.inserted).toBe(2);
+    expect(syncSummary.conflicts).toBe(1);
+
+    const dashboard = await t.query((api as any).icalImport.dashboardForProperty, {
+      propertyId: fx.propertyId,
+    });
+    expect(dashboard.conflicts).toHaveLength(1);
+    expect(dashboard.conflicts[0].unitName).toBe('Phòng A - Căn hộ 2PN');
+    expect(dashboard.conflicts[0].overlapNights).toEqual(['2026-09-22']);
+    expect(dashboard.conflicts[0].bookingA.source).toBe('ical:Airbnb');
+    expect(dashboard.conflicts[0].bookingB.source).toBe('ical:Booking.com');
+
+    const bookingComRecord = dashboard.conflicts[0].bookingB;
+
+    await t.mutation((api as any).icalImport.resolveConflict, {
+      bookingId: bookingComRecord.bookingId,
+      resolutionType: 'move_unit',
+      targetUnitId: secondUnitId,
+      note: 'Chuyển sang Phòng B giữ nguyên giá gốc',
+    });
+
+    const afterDashboard = await t.query((api as any).icalImport.dashboardForProperty, {
+      propertyId: fx.propertyId,
+    });
+    expect(afterDashboard.conflicts).toHaveLength(0);
+  });
+
+  it('does NOT flag a conflict when check-out equals check-in (boundary 20-23/09 and 23-25/09)', async () => {
+    vi.stubEnv('DEMO_MODE', 'true');
+    const t = convexTest(schema, modules);
+    const fx = await seedUnit(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(fx.unitId, {
+        name: 'Phòng A - Căn hộ 2PN',
+        icalImports: [
+          { url: '/mock-ical/airbnb-phong-a.ics', label: 'Airbnb' },
+          { url: '/mock-ical/booking-boundary-phong-a.ics', label: 'Booking.com' },
+        ],
+      });
+    });
+
+    const syncSummary = await t.action((api as any).icalImport.syncNow, {
+      propertyId: fx.propertyId,
+    });
+    expect(syncSummary.inserted).toBe(2);
+    expect(syncSummary.conflicts).toBe(0);
+
+    const dashboard = await t.query((api as any).icalImport.dashboardForProperty, {
+      propertyId: fx.propertyId,
+    });
+    expect(dashboard.conflicts).toHaveLength(0);
+  });
+
+  it('acknowledges an OTA-side resolution and removes it from the active warning queue', async () => {
+    vi.stubEnv('DEMO_MODE', 'true');
+    const t = convexTest(schema, modules);
+    const fx = await seedUnit(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(fx.unitId, {
+        name: 'Phòng A - Căn hộ 2PN',
+        icalImports: [
+          { url: '/mock-ical/airbnb-phong-a.ics', label: 'Airbnb' },
+          { url: '/mock-ical/booking-phong-a.ics', label: 'Booking.com' },
+        ],
+      });
+    });
+    await t.action((api as any).icalImport.syncNow, { propertyId: fx.propertyId });
+    const before = await t.query((api as any).icalImport.dashboardForProperty, { propertyId: fx.propertyId });
+    expect(before.conflicts).toHaveLength(1);
+    await t.mutation((api as any).icalImport.resolveConflict, {
+      bookingId: before.conflicts[0].bookingB.bookingId,
+      resolutionType: 'acknowledge',
+      note: 'Đã dời ngày trên Booking.com',
+    });
+    const after = await t.query((api as any).icalImport.dashboardForProperty, { propertyId: fx.propertyId });
+    expect(after.conflicts).toHaveLength(0);
+    const booking = await t.run((ctx) => ctx.db.get(before.conflicts[0].bookingB.bookingId));
+    expect((booking as any)?.syncConflictAcknowledgedAt).toEqual(expect.any(Number));
   });
 });

@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import { convexTest } from 'convex-test';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
@@ -19,6 +19,7 @@ afterEach(async () => {
     await t.finishInProgressScheduledFunctions();
   }
   created.length = 0;
+  vi.unstubAllEnvs();
 });
 
 function identityFor(userId: Id<'users'>) {
@@ -86,6 +87,21 @@ describe('booking messages', () => {
     await asStaff.mutation(messagesApi.postStaff, { bookingId: fx.bookingId, text: ' Welcome ' });
     const thread = await asStaff.query(messagesApi.listStaff, { bookingId: fx.bookingId });
     expect(thread[0]).toMatchObject({ authorRole: 'staff', authorName: 'Satoshi Staff', text: 'Welcome' });
+  });
+
+  it('uses the synthetic staff identity throughout DEMO_MODE', async () => {
+    vi.stubEnv('DEMO_MODE', 'true');
+    const t = makeT();
+    const fx = await seed(t);
+    const messageId = await t.mutation(messagesApi.postStaff, {
+      bookingId: fx.bookingId,
+      text: 'Phản hồi demo',
+    });
+    const rows = await t.query(messagesApi.listStaff, { bookingId: fx.bookingId });
+    const threads = await t.query(messagesApi.staffThreads, {});
+    expect(messageId).toBeTruthy();
+    expect(rows[0]).toMatchObject({ authorRole: 'staff', authorName: 'Demo staff' });
+    expect(threads[0]).toMatchObject({ bookingId: fx.bookingId, lastMessage: 'Phản hồi demo' });
   });
 
   it('deduplicates opposite-party email alerts by message id', async () => {

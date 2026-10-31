@@ -56,4 +56,38 @@ describe('Consensus Commons seed migration', () => {
       .withIndex('by_code', (q) => q.eq('propertyId', propertyId).eq('normalizedCode', 'CONSENSUS10'))
       .collect())).toHaveLength(1);
   });
+
+  it('seeds Sóng Homestay — Đà Nẵng with 8 units, 3 addOns, and mock iCal feeds on Phòng A', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation((internal as any).seed.run, {});
+
+    const songData = await t.run(async (ctx) => {
+      const prop = await ctx.db
+        .query('properties')
+        .withIndex('by_slug', (q) => q.eq('slug', 'song-homestay'))
+        .first();
+      if (!prop) return null;
+      const units = await ctx.db
+        .query('units')
+        .withIndex('by_property', (q) => q.eq('propertyId', prop._id))
+        .collect();
+      const addOns = await ctx.db
+        .query('addOns')
+        .withIndex('by_property', (q) => q.eq('propertyId', prop._id))
+        .collect();
+      return { prop, units, addOns };
+    });
+
+    expect(songData).not.toBeNull();
+    expect(songData!.prop.currency).toBe('VND');
+    expect(songData!.units).toHaveLength(8);
+    expect(songData!.addOns).toHaveLength(3);
+
+    const phongA = songData!.units.find((u) => u.slug === 'phong-a-can-ho-2pn');
+    expect(phongA).toBeDefined();
+    expect(phongA!.icalImports).toEqual([
+      { url: '/mock-ical/airbnb-phong-a.ics', label: 'Airbnb' },
+      { url: '/mock-ical/booking-phong-a.ics', label: 'Booking.com' },
+    ]);
+  });
 });

@@ -4,7 +4,7 @@
 //
 // Default is CAD (OpenStays is built by SebaHub, a Canadian company).
 
-export const SUPPORTED_CURRENCIES = ['CAD', 'USD', 'EUR'] as const;
+export const SUPPORTED_CURRENCIES = ['CAD', 'USD', 'EUR', 'VND'] as const;
 export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
 
 export const DEFAULT_CURRENCY: SupportedCurrency = 'CAD';
@@ -18,6 +18,7 @@ const CURRENCY_LOCALES: Record<string, string> = {
   CAD: 'en-CA',
   USD: 'en-US',
   EUR: 'en-IE', // English Euro formatting: €1,234.56
+  VND: 'vi-VN',
 };
 
 /**

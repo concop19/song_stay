@@ -8,6 +8,7 @@ import { Spinner } from '../components/Spinner';
 import { formatDisplayDate } from '../lib/dates';
 import { formatMoney } from '../lib/money';
 import { NotFoundPage } from './NotFoundPage';
+import { ResidenceRegistrationSection } from '../components/ResidenceRegistrationSection';
 
 export function ProductionManageBookingPage() {
   const { code } = useParams<{ code: string }>();
@@ -72,6 +73,16 @@ export function ProductionManageBookingPage() {
         <textarea id="booking-message" className="field-input min-h-24" maxLength={2000} value={messageText} onChange={(event) => setMessageText(event.target.value)} />
         <button type="button" className="btn-primary mt-3" disabled={working !== null || !email.trim() || !messageText.trim()} onClick={() => void run('message', async () => { await postMessage({ confirmationCode: code, email: email.trim(), text: messageText }); setMessageText(''); })}>{working === 'message' ? 'Sending…' : 'Send message'}</button>
       </section>
+
+      <div className="card p-8">
+        <ResidenceRegistrationSection
+          confirmationCode={booking.confirmationCode}
+          email={email}
+          defaultCheckIn={booking.checkIn}
+          defaultCheckOut={booking.checkOut}
+          disabled={!cancellable}
+        />
+      </div>
 
       {refund && (refund.refundablePaymentCount > 0 || refund.requestedCaseCount > 0 || refund.completedCaseCount > 0) ? (
         <section className="card p-8" aria-labelledby="refund-heading">

@@ -66,7 +66,7 @@ export function CommandBookingTape({
   return (
     <div
       ref={scroller}
-      className="relative overflow-auto rounded-xl border border-stone-200 bg-white"
+      className="relative min-w-0 max-w-full overflow-auto rounded-xl border border-stone-200 bg-white"
       style={{ height: VIEWPORT_HEIGHT }}
       onScroll={updateVisibleRows}
       tabIndex={0}

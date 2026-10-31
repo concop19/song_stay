@@ -581,6 +581,55 @@ export const confirmSimulated = mutation({
   },
 });
 
+/**
+ * Confirm a direct booking with payment due at the property. This is not a
+ * simulated card charge: no payment ledger row is created and staff can
+ * collect/record settlement later. The property must explicitly opt in.
+ */
+export const confirmPayAtProperty = mutation({
+  args: {
+    bookingId: v.id('bookings'),
+    confirmationCode: v.string(),
+    email: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const booking = await ctx.db.get(args.bookingId);
+    if (!booking || booking.confirmationCode !== args.confirmationCode.trim().toUpperCase()) {
+      throw new ConvexError({ code: 'NOT_FOUND', message: 'Booking not found.' });
+    }
+    const [property, guest] = await Promise.all([
+      ctx.db.get(booking.propertyId),
+      booking.guestId ? ctx.db.get(booking.guestId) : null,
+    ]);
+    if (!property?.allowPayAtProperty) {
+      throw new ConvexError({ code: 'PAY_AT_PROPERTY_DISABLED', message: 'Thanh toán tại homestay chưa được bật.' });
+    }
+    if (!guest || guest.normalizedEmail !== args.email.trim().toLowerCase()) {
+      throw new ConvexError({ code: 'NOT_FOUND', message: 'Email đặt phòng không khớp.' });
+    }
+    if (booking.status !== 'hold') {
+      throw new ConvexError({ code: 'NOT_A_HOLD', message: 'Booking này không còn ở trạng thái chờ xác nhận.' });
+    }
+    if ((booking.holdExpiresAt ?? 0) <= Date.now()) {
+      throw new ConvexError({ code: 'HOLD_EXPIRED', message: 'Thời gian giữ phòng đã hết. Vui lòng đặt lại.' });
+    }
+    const now = Date.now();
+    await applyPromoRedemption(ctx, booking._id);
+    await ctx.db.patch(booking._id, {
+      status: 'confirmed',
+      holdExpiresAt: undefined,
+      statusHistory: [...booking.statusHistory, { status: 'confirmed', ts: now }],
+      notes: [...booking.notes, { ts: now, text: 'Khách chọn thanh toán tại Sóng Homestay.', by: 'guest' }],
+      updatedAt: now,
+    });
+    await ctx.scheduler.runAfter(0, internal.email.sendBookingEmail, {
+      bookingId: booking._id,
+      kind: 'confirmation',
+    });
+    return { confirmationCode: booking.confirmationCode };
+  },
+});
+
 /** Guest-facing cancellation: code + email must match; policy decides refund. */
 export const cancelByGuest = mutation({
   args: {
@@ -690,7 +739,9 @@ async function publicBookingView(ctx: QueryCtx, booking: Doc<'bookings'>) {
     .withIndex('by_booking', (q) => q.eq('bookingId', booking._id))
     .collect();
   return {
+    propertyId: booking.propertyId,
     currency: property?.currency ?? 'CAD',
+    payAtPropertyEnabled: property?.allowPayAtProperty ?? false,
     taxLabel: property?.taxLabel,
     status: booking.status,
     confirmationCode: booking.confirmationCode,

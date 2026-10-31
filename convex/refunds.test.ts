@@ -1,12 +1,28 @@
 /// <reference types="vite/client" />
 import { convexTest } from 'convex-test';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/!(*.*.*)*.*s');
 const refundsApi = (api as any).refunds;
+const created: Array<ReturnType<typeof convexTest>> = [];
+
+function makeT() {
+  const t = convexTest(schema, modules);
+  created.push(t);
+  return t;
+}
+
+afterEach(async () => {
+  for (const t of created) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await t.finishInProgressScheduledFunctions();
+  }
+  created.length = 0;
+  vi.unstubAllEnvs();
+});
 
 function identityFor(userId: Id<'users'>) {
   return { subject: `${userId}|test-session` };
@@ -54,7 +70,7 @@ async function seedRefund(t: ReturnType<typeof convexTest>, amountCents = 10_000
 
 describe('manual refunds', () => {
   it('requires staff to list or complete cases', async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     const fx = await seedRefund(t);
     await expect(t.query(refundsApi.listOpen, {})).rejects.toThrow(/UNAUTHENTICATED/);
     await expect(t.mutation(refundsApi.complete, {
@@ -64,7 +80,7 @@ describe('manual refunds', () => {
   });
 
   it('requires an external reference and completes exactly once', async () => {
-    const t = convexTest(schema, modules);
+    const t = makeT();
     const fx = await seedRefund(t);
     const staff = t.withIdentity(identityFor(fx.userId));
     const open = await staff.query(refundsApi.listOpen, {});
@@ -96,5 +112,12 @@ describe('manual refunds', () => {
     expect(state.refundCase).toMatchObject({
       status: 'completed', externalReference: 'zaprite-refund-123', resolvedBy: 'Staff',
     });
+  });
+
+  it('allows the synthetic staff identity to list cases only in DEMO_MODE', async () => {
+    vi.stubEnv('DEMO_MODE', 'true');
+    const t = makeT();
+    await seedRefund(t);
+    await expect(t.query(refundsApi.listOpen, {})).resolves.toHaveLength(1);
   });
 });

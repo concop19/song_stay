@@ -92,8 +92,8 @@ export function StayMedia({ propertySlug, propertyName, amenities, photoUrls }: 
         <section className="mt-7" aria-labelledby="stay-gallery-title">
           <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Inside the commons</p>
-              <h2 id="stay-gallery-title" className="mt-1 font-display text-xl font-semibold text-stone-900">A fictional stay, made tangible</h2>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">{isConsensusCommons ? 'Inside the commons' : 'Không gian lưu trú'}</p>
+              <h2 id="stay-gallery-title" className="mt-1 font-display text-xl font-semibold text-stone-900">{isConsensusCommons ? 'A fictional stay, made tangible' : `Hình ảnh ${propertyName}`}</h2>
             </div>
             {isConsensusCommons ? <p className="text-xs text-stone-500">Concept imagery · no real property or guest data</p> : null}
           </div>

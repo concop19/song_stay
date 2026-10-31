@@ -22,7 +22,7 @@ export function GuestForm({ value, onChange, maxOccupancy }: GuestFormProps) {
     <div className="space-y-4">
       <div>
         <label className="field-label" htmlFor="guest-name">
-          Full name
+          Họ và tên
         </label>
         <input
           id="guest-name"
@@ -49,7 +49,7 @@ export function GuestForm({ value, onChange, maxOccupancy }: GuestFormProps) {
         </div>
         <div>
           <label className="field-label" htmlFor="guest-phone">
-            Phone
+            Số điện thoại
           </label>
           <input
             id="guest-phone"
@@ -64,7 +64,7 @@ export function GuestForm({ value, onChange, maxOccupancy }: GuestFormProps) {
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className="field-label" htmlFor="guest-adults">
-            Adults
+            Người lớn
           </label>
           <input
             id="guest-adults"
@@ -78,7 +78,7 @@ export function GuestForm({ value, onChange, maxOccupancy }: GuestFormProps) {
         </div>
         <div>
           <label className="field-label" htmlFor="guest-children">
-            Children
+            Trẻ em
           </label>
           <input
             id="guest-children"
@@ -99,9 +99,9 @@ export function GuestForm({ value, onChange, maxOccupancy }: GuestFormProps) {
           className="mt-0.5 h-4 w-4 rounded border-stone-300 text-emerald-700 focus:ring-emerald-600"
         />
         <span>
-          Send me occasional news and offers.
+          Tôi đồng ý nhận tin và ưu đãi từ Sóng Homestay.
           <span className="mt-1 block text-xs text-stone-500">
-            Consent is recorded with your reservation; this demo does not send marketing campaigns.
+            Bạn có thể bỏ chọn; lựa chọn này không ảnh hưởng đến việc đặt phòng. Consent is recorded with your reservation; this demo does not send marketing campaigns.
           </span>
         </span>
       </label>

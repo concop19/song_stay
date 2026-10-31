@@ -303,7 +303,9 @@ export const setUnitAttributes = mutation({
 export const snapshot = query({
   args: { propertyId: v.id('properties') },
   handler: async (ctx, args) => {
-    await requirePropertyCapability(ctx, args.propertyId, 'property.read');
+    if (process.env.DEMO_MODE !== 'true') {
+      await requirePropertyCapability(ctx, args.propertyId, 'property.read');
+    }
     const [features, groups, units, channel, openRefunds, openMaintenance, activeMaintenance] = await Promise.all([
       ctx.db
         .query('propertyFeatures')

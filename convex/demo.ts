@@ -1,6 +1,6 @@
 import { internalMutation } from './_generated/server';
 import { ConvexError } from 'convex/values';
-import { seedConsensusCommons, seedPinewoodFlats } from './seed';
+import { seedConsensusCommons, seedPinewoodFlats, seedSongHomestay } from './seed';
 
 /**
  * DEMO_MODE nightly reset: wipe all domain tables and re-seed Pinewood Flats.
@@ -59,11 +59,14 @@ export const reset = internalMutation({
       'channelSync',
       'channelSyncLog',
       'auditLog',
+      'propertyFeatures',
+      'residenceRegistrations',
     ] as const;
     for (const table of tables) {
       const rows = await ctx.db.query(table).collect();
       for (const row of rows) await ctx.db.delete(row._id);
     }
+    await seedSongHomestay(ctx);
     await seedPinewoodFlats(ctx);
     await seedConsensusCommons(ctx);
     return { reset: true };

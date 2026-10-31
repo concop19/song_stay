@@ -17,6 +17,7 @@ import {
 } from '../lib/livePayments';
 import { PUBLIC_SHOWCASE } from '../lib/publicShowcase';
 import { FictionalBookingNotice } from '../components/FictionalBookingNotice';
+import { ResidenceRegistrationSection } from '../components/ResidenceRegistrationSection';
 
 export function ManageBookingPage() {
   const { code } = useParams<{ code: string }>();
@@ -208,6 +209,14 @@ export function ManageBookingPage() {
             </div>
           ) : <p className="mt-3 text-sm text-stone-500">Booking details stay hidden until the email matches this reservation.</p>}
         </section>
+
+        <ResidenceRegistrationSection
+          confirmationCode={booking.confirmationCode}
+          email={email}
+          defaultCheckIn={booking.checkIn}
+          defaultCheckOut={booking.checkOut}
+          disabled={cancelled}
+        />
 
         {consensus ? <section className="mt-6 border-t border-stone-200 pt-6" aria-labelledby="consensus-heading">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">Consensus Commons</p>
